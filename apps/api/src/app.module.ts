@@ -19,5 +19,5 @@ import { GitHubController, GitHubService } from './modules/github.js'
   providers: [DatabaseService, AuthService, WorkspaceService, ProjectService, TaskService, DocumentService, PlanService, McpTokenService, McpService, TransferService, GitHubService, { provide: APP_GUARD, useClass: SessionGuard }],
 })
 export class AppModule implements NestModule {
-  configure(consumer: MiddlewareConsumer) { consumer.apply(requestContext, cookieParser()).forRoutes('*') }
+  configure(consumer: MiddlewareConsumer) { consumer.apply(requestContext, cookieParser()).forRoutes('{*path}') }
 }

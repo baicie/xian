@@ -4,6 +4,7 @@ services:
     environment:
       DATABASE_URL: postgres://xian:xian@postgres:5432/xian
       APP_ORIGIN: http://localhost:8080
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-task-harbor-local-development-key}
     ports: ["8080:8080"]
     depends_on:
       postgres:

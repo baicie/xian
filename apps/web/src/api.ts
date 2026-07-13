@@ -9,7 +9,7 @@ export type PlanSummary=Omit<ProjectPlan,'items'|'appliedAt'> & {projectName:str
 
 const base='/api/v1'
 let csrf=''
-async function request<T>(path:string,init:RequestInit={}){const response=await fetch(base+path,{...init,credentials:'include',headers:{'content-type':'application/json',...(csrf?{'x-csrf-token':csrf}:{}),...init.headers}});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||'请求失败');return data as T}
+async function request<T>(path:string,init:RequestInit={}){const response=await fetch(base+path,{...init,credentials:'include',headers:{'content-type':'application/json',...(csrf?{'x-csrf-token':csrf}:{}),...init.headers}}),text=await response.text();let data:any=null;try{data=text?JSON.parse(text):null}catch{data=null}if(!response.ok)throw new Error(data?.message||'请求失败');return data as T}
 async function upload<T>(path:string,file:File){const body=new FormData();body.append('file',file);const response=await fetch(base+path,{method:'POST',body,credentials:'include',headers:csrf?{'x-csrf-token':csrf}:{}});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||'上传失败');return data as T}
 export const api={
   async me(){const data=await request<{user:{id:string;name:string};csrfToken:string}>('/auth/me');csrf=data.csrfToken;return data},

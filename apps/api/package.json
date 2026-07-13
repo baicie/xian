@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/main.ts",
+    "dev": "npm run build && (tsc -p tsconfig.json --watch --preserveWatchOutput & node --watch dist/main.js)",
     "build": "tsc -p tsconfig.json && cp -R src/database/migrations dist/database/",
     "start": "node dist/main.js",
     "test": "vitest run --config vitest.config.ts",

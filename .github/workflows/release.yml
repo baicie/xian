@@ -38,7 +38,7 @@ jobs:
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
-            type=sha,prefix=git-
+            type=raw,value=git-${{ github.sha }}
             type=raw,value=latest
 
       - name: Build and push
@@ -73,7 +73,7 @@ jobs:
           script: |
             set -euo pipefail
 
-            IMAGE='${{ env.IMAGE_NAME }}:latest'
+            IMAGE='${{ env.IMAGE_NAME }}:git-${{ github.sha }}'
             APP_DIR="$HOME/workspace/task-harbor"
             mkdir -p "$APP_DIR"
             cd "$APP_DIR"
@@ -103,7 +103,7 @@ jobs:
             cat > docker-compose.yml <<'COMPOSE'
             services:
               app:
-                image: ${{ env.IMAGE_NAME }}:latest
+                image: ${{ env.IMAGE_NAME }}:git-${{ github.sha }}
                 restart: unless-stopped
                 environment:
                   DATABASE_URL: postgres://xian:xian@postgres:5432/xian

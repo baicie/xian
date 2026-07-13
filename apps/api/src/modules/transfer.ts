@@ -1,4 +1,4 @@
-import { Controller, Get, Injectable, Param, Post, Req, Res, UploadedFile, UseInterceptors } from '@nestjs/common'
+import { BadRequestException, Controller, Get, Injectable, Param, Post, Req, Res, UploadedFile, UseInterceptors } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
 import { randomBytes } from 'node:crypto'
 import type { Response } from 'express'
@@ -10,6 +10,7 @@ import { WorkspaceService } from './workspaces.js'
 const iso=(value:unknown)=>value instanceof Date?value.toISOString():String(value)
 type ExportRow=Record<string,any>
 type Upload={buffer:Buffer}
+const fileData=(file:Upload|undefined)=>{if(!file?.buffer)throw new BadRequestException({code:'BACKUP_FILE_REQUIRED',message:'请选择备份文件'});return file.buffer}
 
 @Injectable()
 export class TransferService {
@@ -71,6 +72,6 @@ const upload=FileInterceptor('file',{limits:{fileSize:25*1024*1024,files:1}})
 export class TransferController {
   constructor(private readonly transfer:TransferService){}
   @Get(':workspaceId/export')async export(@Req() req:AppRequest,@Param('workspaceId') workspaceId:string,@Res() res:Response){const archive=await this.transfer.archive(workspaceId,req.user!.id);res.setHeader('content-type','application/zip');res.setHeader('content-disposition',`attachment; filename="taskharbor-${new Date().toISOString().slice(0,10)}.zip"`);res.send(Buffer.from(archive))}
-  @Post('import/preview')@UseInterceptors(upload)preview(@UploadedFile() file:Upload){return this.transfer.preview(file.buffer)}
-  @Post('import')@UseInterceptors(upload)restore(@Req() req:AppRequest,@UploadedFile() file:Upload){return this.transfer.restore(file.buffer,req.user!.id)}
+  @Post('import/preview')@UseInterceptors(upload)preview(@UploadedFile() file?:Upload){return this.transfer.preview(fileData(file))}
+  @Post('import')@UseInterceptors(upload)restore(@Req() req:AppRequest,@UploadedFile() file?:Upload){return this.transfer.restore(fileData(file),req.user!.id)}
 }

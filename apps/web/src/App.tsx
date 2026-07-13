@@ -514,7 +514,7 @@ function TaskCard({
   const [dragging, setDragging] = useState(false);
   return (
     <Button
-      render={<article className={`task-card ${dragging ? "dragging" : ""}`} />}
+      render={<button type="button" className={`task-card ${dragging ? "dragging" : ""}`} />}
       variant="ghost"
       draggable
       onDragStart={(event) => {
