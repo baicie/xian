@@ -12,10 +12,11 @@ import { DocumentController, DocumentService } from './modules/documents.js'
 import { PlanController, PlanService } from './modules/plans.js'
 import { McpController, McpService, McpTokenController, McpTokenService } from './modules/mcp.js'
 import { TransferController, TransferService } from './modules/transfer.js'
+import { GitHubController, GitHubService } from './modules/github.js'
 
 @Module({
-  controllers: [AuthController, WorkspaceController, ProjectController, TaskController, DocumentController, PlanController, McpTokenController, TransferController, McpController, SystemController],
-  providers: [DatabaseService, AuthService, WorkspaceService, ProjectService, TaskService, DocumentService, PlanService, McpTokenService, McpService, TransferService, { provide: APP_GUARD, useClass: SessionGuard }],
+  controllers: [AuthController, WorkspaceController, ProjectController, TaskController, DocumentController, PlanController, McpTokenController, TransferController, GitHubController, McpController, SystemController],
+  providers: [DatabaseService, AuthService, WorkspaceService, ProjectService, TaskService, DocumentService, PlanService, McpTokenService, McpService, TransferService, GitHubService, { provide: APP_GUARD, useClass: SessionGuard }],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) { consumer.apply(requestContext, cookieParser()).forRoutes('*') }

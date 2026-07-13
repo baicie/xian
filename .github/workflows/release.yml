@@ -93,6 +93,13 @@ jobs:
             esac
             export APP_PORT
 
+            ENCRYPTION_KEY_FILE="$APP_DIR/.app-encryption-key"
+            if [ ! -s "$ENCRYPTION_KEY_FILE" ]; then
+              openssl rand -hex 32 > "$ENCRYPTION_KEY_FILE"
+              chmod 600 "$ENCRYPTION_KEY_FILE"
+            fi
+            export APP_ENCRYPTION_KEY="$(cat "$ENCRYPTION_KEY_FILE")"
+
             cat > docker-compose.yml <<'COMPOSE'
             services:
               app:
@@ -101,6 +108,7 @@ jobs:
                 environment:
                   DATABASE_URL: postgres://xian:xian@postgres:5432/xian
                   APP_ORIGIN: http://${{ secrets.PERF_VM_HOST }}:${APP_PORT}
+                  APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY}
                 ports:
                   - "${APP_PORT}:8080"
                 depends_on:
