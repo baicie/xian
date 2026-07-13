@@ -1,24 +1,12 @@
 {
-  "name": "xian-project-manager",
+  "name": "xian",
   "private": true,
-  "version": "0.1.0",
-  "type": "module",
+  "workspaces": ["apps/*"],
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "test": "vitest run"
-  },
-  "dependencies": {
-    "@vitejs/plugin-react": "latest",
-    "lucide-react": "latest",
-    "vite": "latest",
-    "react": "latest",
-    "react-dom": "latest"
-  },
-  "devDependencies": {
-    "@types/react": "latest",
-    "@types/react-dom": "latest",
-    "typescript": "latest",
-    "vitest": "latest"
+    "dev": "npm run dev -w @xian/api & npm run dev -w @xian/web",
+    "build": "npm run build -w @xian/web && npm run build -w @xian/api",
+    "test": "npm test -w @xian/web && npm test -w @xian/api",
+    "db:migrate": "npm run db:migrate -w @xian/api",
+    "start": "npm run start -w @xian/api"
   }
 }
