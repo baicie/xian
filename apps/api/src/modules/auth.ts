@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Injectable, Post, Req, Res, UnauthorizedException } from '@nestjs/common'
+import { BadRequestException, Body, ConflictException, Controller, Get, Injectable, Post, Req, Res, UnauthorizedException } from '@nestjs/common'
 import { hash, verify } from '@node-rs/argon2'
 import { randomBytes } from 'node:crypto'
 import type { Response } from 'express'
@@ -15,7 +15,7 @@ export class AuthService {
   async register(input: ReturnType<typeof registerSchema.parse>) {
     const passwordHash = await hash(input.password, { algorithm: 2 })
     const slug = `${input.workspaceName.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-').slice(0, 32)}-${randomBytes(3).toString('hex')}`
-    return this.db.client.begin(async (sql) => {
+    try { return await this.db.client.begin(async (sql) => {
       const [user] = await sql<{ id: string; email: string; name: string }[]>`INSERT INTO users(email,name,password_hash) VALUES(${input.email.toLowerCase()},${input.name},${passwordHash}) RETURNING id,email,name`
       if (!user) throw new Error('user insert failed')
       const [workspace] = await sql<{ id: string; name: string; slug: string }[]>`INSERT INTO workspaces(name,slug,created_by) VALUES(${input.workspaceName},${slug},${user.id}) RETURNING id,name,slug`
@@ -24,7 +24,10 @@ export class AuthService {
       const [project] = await sql<{id:string}[]>`INSERT INTO projects(workspace_id,name,code,description,color,lead_id) VALUES(${workspace.id},'第一个项目','TEAM','从这里开始团队协作','#2367d1',${user.id}) RETURNING id`
       for (const [index,item] of [['待处理','#84908b'],['进行中','#2367d1'],['待验收','#d5792a'],['已完成','#27825a']].entries()) await sql`INSERT INTO board_columns(workspace_id,project_id,name,color,position) VALUES(${workspace.id},${project!.id},${item![0]!},${item![1]!},${(index+1)*1000})`
       return { user, workspace }
-    })
+    }) } catch (error) {
+      if (typeof error === 'object' && error && 'code' in error && error.code === '23505' && 'constraint_name' in error && error.constraint_name === 'users_email_key') throw new ConflictException({ code: 'EMAIL_EXISTS', message: '该邮箱已注册，请直接登录' })
+      throw error
+    }
   }
   async login(email: string, password: string, ip: string) {
     this.limit(ip)
