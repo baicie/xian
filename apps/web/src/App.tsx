@@ -91,6 +91,14 @@ import {
 } from "./components/ui/input-group";
 import { Kbd } from "./components/ui/kbd";
 import { Textarea } from "./components/ui/textarea";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "./components/ui/sheet";
 import { Toaster } from "./components/ui/sonner";
 import { ToggleGroup, ToggleGroupItem } from "./components/ui/toggle-group";
 
@@ -494,16 +502,14 @@ function Sidebar({
 
 function TaskCard({
   task,
-  columns,
-  onMove,
   onEdit,
   t,
+  code,
 }: {
   task: Task;
-  columns: BoardColumn[];
-  onMove: (id: string, column: ColumnId) => void;
   onEdit: (task: Task) => void;
   t: Copy;
+  code: string;
 }) {
   const [dragging, setDragging] = useState(false);
   return (
@@ -519,10 +525,14 @@ function TaskCard({
       onClick={() => onEdit(task)}
     >
       <span className="task-top">
-        <Badge
-          variant="ghost"
-          className={`priority priority--${task.priority}`}
-        >
+        <span className="task-key">{code}-{task.number}</span>
+        <Badge variant={task.kind === "BUG" ? "destructive" : "secondary"}>
+          {task.kind === "BUG" ? t.bug : task.kind === "STORY" ? t.story : t.task}
+        </Badge>
+      </span>
+      <span className="task-title">{task.title}</span>
+      <span className="task-details-row">
+        <Badge variant="ghost" className={`priority priority--${task.priority}`}>
           {
             (
               { 高: t.high, 中: t.medium, 低: t.low } as Record<
@@ -533,15 +543,7 @@ function TaskCard({
           }{" "}
           {t.priority}
         </Badge>
-        <Badge variant={task.kind === "BUG" ? "destructive" : "secondary"}>
-          {task.kind === "BUG"
-            ? t.bug
-            : task.kind === "STORY"
-              ? t.story
-              : t.task}
-        </Badge>
       </span>
-      <span className="task-title">{task.title}</span>
       <span className="tags">
         {task.tags.map((tag) => (
           <Badge variant="outline" key={tag}>
@@ -552,24 +554,9 @@ function TaskCard({
       <span className="task-meta">
         <span className={task.due === "今天" ? "due-today" : ""}>
           <Clock3 />
-          {task.due}
+          {task.due || (t.due === "截止时间" ? "未设置" : "Not set")}
         </span>
-        <UserAvatar name={task.assignee} small />
-      </span>
-      <span
-        className="card-status"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <ChoiceSelect
-          label={`${t.status} ${task.title}`}
-          value={task.column}
-          options={columns.map((column) => ({
-            value: column.id,
-            label: column.label,
-          }))}
-          onChange={(column) => onMove(task.id, column)}
-          className="card-status-select"
-        />
+        <span className="task-assignee"><UserAvatar name={task.assignee} small />{task.assignee}</span>
       </span>
     </Button>
   );
@@ -595,26 +582,24 @@ function TaskDialog({
   const [draft, setDraft] = useState<Task | null>(task);
   useEffect(() => setDraft(task), [task]);
   if (!draft) return null;
-  const people = members.length
-    ? members.map((member) => member.name)
-    : [draft.assignee];
   return (
-    <Dialog open={Boolean(task)} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="dialog">
+    <Sheet open={Boolean(task)} onOpenChange={(open) => !open && onClose()}>
+      <SheetContent className="task-sheet">
         <form
+          className="task-sheet-form"
           onSubmit={(event: FormEvent) => {
             event.preventDefault();
             onSave(draft);
           }}
         >
-          <DialogHeader>
+          <SheetHeader>
             <span className="dialog-key">
               {code}-{draft.number || "NEW"}
             </span>
-            <DialogTitle>{t.taskDetails}</DialogTitle>
-            <DialogDescription>{t.tagline}</DialogDescription>
-          </DialogHeader>
-          <FieldGroup className="dialog-fields">
+            <SheetTitle>{t.taskDetails}</SheetTitle>
+            <SheetDescription>{t.tagline}</SheetDescription>
+          </SheetHeader>
+          <div className="task-sheet-body"><FieldGroup className="dialog-fields">
             <Field>
               <FieldLabel htmlFor="task-title">{t.taskTitle}</FieldLabel>
               <Input
@@ -673,9 +658,9 @@ function TaskDialog({
                 <FieldLabel>{t.assignee}</FieldLabel>
                 <ChoiceSelect
                   label={t.assignee}
-                  value={draft.assignee}
-                  options={people.map((value) => ({ value, label: value }))}
-                  onChange={(assignee) => setDraft({ ...draft, assignee })}
+                  value={draft.assigneeId || "NONE"}
+                  options={[{value:"NONE",label:t.assignee === "负责人" ? "未分配" : "Unassigned"},...members.map((member) => ({ value: member.id, label: member.name }))]}
+                  onChange={(assigneeId) => { const assignee=members.find(member=>member.id===assigneeId)?.name??"未分配";setDraft({ ...draft, assigneeId:assigneeId==="NONE"?"":assigneeId,assignee }) }}
                   className="choice-select"
                 />
               </Field>
@@ -683,6 +668,7 @@ function TaskDialog({
                 <FieldLabel htmlFor="task-due">{t.due}</FieldLabel>
                 <Input
                   id="task-due"
+                  type="date"
                   value={draft.due}
                   onChange={(event) =>
                     setDraft({ ...draft, due: event.target.value })
@@ -711,21 +697,23 @@ function TaskDialog({
                 id="task-description"
                 placeholder="补充任务背景、验收标准或相关链接…"
                 rows={5}
+                value={draft.description}
+                onChange={(event)=>setDraft({...draft,description:event.target.value})}
               />
             </Field>
-          </FieldGroup>
-          <DialogFooter>
+          </FieldGroup></div>
+          <SheetFooter className="task-sheet-footer">
             <Button type="button" variant="outline" onClick={onClose}>
               {t.cancel}
             </Button>
-          <Button type="submit">
+            <Button type="submit">
               <Check data-icon="inline-start" />
               {t.save}
             </Button>
-          </DialogFooter>
+          </SheetFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -963,8 +951,10 @@ export default function App() {
         column: column.id,
         priority: "中",
         assignee: user,
-        due: "未设置",
+        assigneeId: members.find((member) => member.name === user)?.id ?? "",
+        due: "",
         tags: [],
+        description: "",
         version: 1,
       });
   };
@@ -1230,10 +1220,9 @@ export default function App() {
                           <TaskCard
                             key={task.id}
                             task={task}
-                            columns={columns}
-                            onMove={(id, column) => void move(id, column)}
                             onEdit={setEditing}
                             t={t}
+                            code={project.code}
                           />
                         ))}
                         {columnTasks.length === 0 ? (
