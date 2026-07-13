@@ -21,5 +21,18 @@ export const documentUpdateSchema = documentCreateSchema.partial().extend({
   changeNote: z.string().trim().max(300).default(''),
   version: z.number().int().positive(),
 }).strict()
+export const planItemSchema = z.object({
+  title: z.string().trim().min(1).max(300),
+  description: z.string().max(20000).default(''),
+  kind: z.enum(['TASK', 'STORY', 'BUG']).default('TASK'),
+  priority: z.enum(['HIGH', 'MEDIUM', 'LOW']).default('MEDIUM'),
+}).strict()
+export const planCreateSchema = z.object({
+  projectId: z.string().uuid(),
+  title: z.string().trim().min(1).max(200),
+  goal: z.string().trim().min(1).max(4000),
+  items: z.array(planItemSchema).min(1).max(100),
+}).strict()
+export const planUpdateSchema = planCreateSchema.omit({ projectId: true }).partial().extend({ version: z.number().int().positive() }).strict()
 
 export type ApiErrorResponse = { code: string; message: string; requestId: string; details?: Record<string, unknown> }

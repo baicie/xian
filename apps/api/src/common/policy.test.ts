@@ -18,4 +18,10 @@ describe('workspace RBAC', () => {
     expect(can('MEMBER', 'document.create')).toBe(true)
     expect(can('MEMBER', 'document.update')).toBe(true)
   })
+
+  it('lets members draft and apply plans while viewers only read them', () => {
+    expect(can('MEMBER', 'plan.apply')).toBe(true)
+    expect(can('VIEWER', 'plan.read')).toBe(true)
+    expect(can('VIEWER', 'plan.create')).toBe(false)
+  })
 })
