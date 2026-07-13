@@ -1,4 +1,4 @@
-FROM node:24.4.1-alpine AS build
+FROM node:26.5.0-alpine AS build
 WORKDIR /app
 COPY package*.json ./
 COPY apps/api/package.json apps/api/package.json
@@ -7,7 +7,7 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM node:24.4.1-alpine AS runtime
+FROM node:26.5.0-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production PORT=8080
 COPY package*.json ./
