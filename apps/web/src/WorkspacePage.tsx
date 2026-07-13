@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, lazy, Suspense, useEffect, useState } from "react";
 import {
   CalendarDays,
   CheckCircle2,
@@ -47,8 +47,10 @@ import {
 } from "./components/ui/field";
 import { Input } from "./components/ui/input";
 
+const DocumentsPage = lazy(() => import("./features/documents/DocumentsPage"));
+
 export type Page =
-  "overview" | "tasks" | "calendar" | "archived" | "members" | "settings";
+  "overview" | "tasks" | "calendar" | "documents" | "archived" | "members" | "settings";
 type Props = {
   page: Exclude<Page, "tasks">;
   tasks: Task[];
@@ -57,6 +59,7 @@ type Props = {
   projectCount: number;
   user: string;
   lang: "zh" | "en";
+  projects: { id: string; name: string }[];
 };
 type Role = "ADMIN" | "MEMBER" | "VIEWER";
 
@@ -68,6 +71,7 @@ export default function WorkspacePage({
   projectCount,
   user,
   lang,
+  projects,
 }: Props) {
   const [members, setMembers] = useState<
       Awaited<ReturnType<typeof api.members>>
@@ -89,6 +93,7 @@ export default function WorkspacePage({
         .then(setArchived)
         .catch((reason) => setError(reason.message));
   }, [page, workspaceId, projectId]);
+  if (page === "documents") return <Suspense fallback={<main className="boot">{en ? "Loading documents…" : "正在加载文档…"}</main>}><DocumentsPage workspaceId={workspaceId} projects={projects} en={en} /></Suspense>;
   if (page === "overview")
     return (
       <PageShell

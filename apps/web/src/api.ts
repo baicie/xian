@@ -1,5 +1,9 @@
 import type { Task } from './board'
 
+export type DocumentKind = 'ARCHITECTURE' | 'REQUIREMENT' | 'DESIGN' | 'MEETING' | 'RETROSPECTIVE'
+export type WorkspaceDocument = { id:string;projectId:string|null;title:string;kind:DocumentKind;status:'DRAFT'|'PUBLISHED'|'ARCHIVED';content:string;version:number;createdAt:string;updatedAt:string }
+export type DocumentSummary = Omit<WorkspaceDocument,'content'|'createdAt'> & { projectName:string|null;updatedByName:string }
+
 const base='/api/v1'
 let csrf=''
 async function request<T>(path:string,init:RequestInit={}){const response=await fetch(base+path,{...init,credentials:'include',headers:{'content-type':'application/json',...(csrf?{'x-csrf-token':csrf}:{}),...init.headers}});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||'请求失败');return data as T}
@@ -19,4 +23,9 @@ export const api={
   addMember(workspaceId:string,input:{email:string;role:'ADMIN'|'MEMBER'|'VIEWER'}){return request(`/workspaces/${workspaceId}/members`,{method:'POST',body:JSON.stringify(input)})},
   createTask(workspaceId:string,task:Task){return request(`/workspaces/${workspaceId}/tasks`,{method:'POST',body:JSON.stringify({projectId:task.projectId,columnId:task.column,title:task.title,description:'',kind:task.kind,priority:{高:'HIGH',中:'MEDIUM',低:'LOW'}[task.priority],assigneeIds:[],dueDate:null,labels:task.tags})})},
   updateTask(workspaceId:string,task:Task){return request<{id:string;version:number}>(`/workspaces/${workspaceId}/tasks/${task.id}`,{method:'PATCH',body:JSON.stringify({title:task.title,kind:task.kind,columnId:task.column,priority:{高:'HIGH',中:'MEDIUM',低:'LOW'}[task.priority],version:task.version})})},
+  documents(workspaceId:string){return request<DocumentSummary[]>(`/workspaces/${workspaceId}/documents`)},
+  document(workspaceId:string,documentId:string){return request<WorkspaceDocument>(`/workspaces/${workspaceId}/documents/${documentId}`)},
+  createDocument(workspaceId:string,input:{title:string;kind?:DocumentKind;projectId?:string|null;content?:string}){return request<WorkspaceDocument>(`/workspaces/${workspaceId}/documents`,{method:'POST',body:JSON.stringify(input)})},
+  updateDocument(workspaceId:string,documentId:string,input:Partial<Pick<WorkspaceDocument,'title'|'kind'|'status'|'content'|'projectId'>> & {version:number;changeNote?:string}){return request<WorkspaceDocument>(`/workspaces/${workspaceId}/documents/${documentId}`,{method:'PATCH',body:JSON.stringify(input)})},
+  documentVersions(workspaceId:string,documentId:string){return request<{id:string;version:number;title:string;status:WorkspaceDocument['status'];changeNote:string;createdAt:string;createdByName:string}[]>(`/workspaces/${workspaceId}/documents/${documentId}/versions`)},
 }

@@ -6,6 +6,7 @@ import {
   ChevronDown,
   Clock3,
   Command,
+  FileText,
   Filter,
   LayoutDashboard,
   List,
@@ -111,6 +112,7 @@ const copy = {
     overview: "概览",
     myTasks: "我的任务",
     calendar: "日历",
+    documents: "设计文档",
     project: "项目",
     newProject: "新建项目",
     archived: "已归档",
@@ -165,6 +167,7 @@ const copy = {
     overview: "Overview",
     myTasks: "My tasks",
     calendar: "Calendar",
+    documents: "Documents",
     project: "Projects",
     newProject: "New project",
     archived: "Archived",
@@ -342,6 +345,14 @@ function Sidebar({
         >
           <CalendarDays data-icon="inline-start" />
           {t.calendar}
+        </Button>
+        <Button
+          variant="ghost"
+          className={`nav-item ${page === "documents" ? "active" : ""}`}
+          onClick={() => onNavigate("documents")}
+        >
+          <FileText data-icon="inline-start" />
+          {t.documents}
         </Button>
         <p className="nav-label nav-label--project">
           {t.project}
@@ -1283,6 +1294,7 @@ export default function App() {
             projectCount={projects.length}
             user={user}
             lang={lang}
+            projects={projects}
           />
         )}
       </main>
