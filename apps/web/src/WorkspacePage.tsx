@@ -47,6 +47,7 @@ import {
 } from "./components/ui/field";
 import { Input } from "./components/ui/input";
 import McpTokensPanel from "./features/settings/McpTokensPanel";
+import TransferPanel from "./features/settings/TransferPanel";
 
 const DocumentsPage = lazy(() => import("./features/documents/DocumentsPage"));
 const PlansPage = lazy(() => import("./features/plans/PlansPage"));
@@ -64,6 +65,7 @@ type Props = {
   projects: { id: string; name: string }[];
   onTasksChanged: () => Promise<void>;
   workspaceRole: string;
+  onWorkspaceRestored: (workspaceId: string) => Promise<void>;
 };
 type Role = "ADMIN" | "MEMBER" | "VIEWER";
 
@@ -78,6 +80,7 @@ export default function WorkspacePage({
   projects,
   onTasksChanged,
   workspaceRole,
+  onWorkspaceRestored,
 }: Props) {
   const [members, setMembers] = useState<
       Awaited<ReturnType<typeof api.members>>
@@ -244,6 +247,7 @@ export default function WorkspacePage({
         </Card>
       </div>
       {workspaceRole === "OWNER" || workspaceRole === "ADMIN" ? <McpTokensPanel workspaceId={workspaceId} en={en} /> : null}
+      <TransferPanel workspaceId={workspaceId} en={en} onRestored={onWorkspaceRestored} />
     </PageShell>
   );
 }

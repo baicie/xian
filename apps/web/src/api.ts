@@ -10,6 +10,7 @@ export type PlanSummary=Omit<ProjectPlan,'items'|'appliedAt'> & {projectName:str
 const base='/api/v1'
 let csrf=''
 async function request<T>(path:string,init:RequestInit={}){const response=await fetch(base+path,{...init,credentials:'include',headers:{'content-type':'application/json',...(csrf?{'x-csrf-token':csrf}:{}),...init.headers}});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||'请求失败');return data as T}
+async function upload<T>(path:string,file:File){const body=new FormData();body.append('file',file);const response=await fetch(base+path,{method:'POST',body,credentials:'include',headers:csrf?{'x-csrf-token':csrf}:{}});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||'上传失败');return data as T}
 export const api={
   async me(){const data=await request<{user:{id:string;name:string};csrfToken:string}>('/auth/me');csrf=data.csrfToken;return data},
   async login(email:string,password:string){const data=await request<{user:{id:string;name:string};csrfToken:string}>('/auth/login',{method:'POST',body:JSON.stringify({email,password})});csrf=data.csrfToken;return data},
@@ -39,4 +40,7 @@ export const api={
   mcpTokens(workspaceId:string){return request<{id:string;name:string;scopes:string[];lastUsedAt:string|null;createdAt:string}[]>(`/workspaces/${workspaceId}/mcp-tokens`)},
   createMcpToken(workspaceId:string,input:{name:string;write:boolean}){return request<{id:string;name:string;scopes:string[];createdAt:string;token:string}>(`/workspaces/${workspaceId}/mcp-tokens`,{method:'POST',body:JSON.stringify(input)})},
   revokeMcpToken(workspaceId:string,tokenId:string){return request(`/workspaces/${workspaceId}/mcp-tokens/${tokenId}`,{method:'DELETE'})},
+  async exportWorkspace(workspaceId:string){const response=await fetch(`${base}/workspaces/${workspaceId}/export`,{credentials:'include'});if(!response.ok)throw new Error('导出失败');return{blob:await response.blob(),filename:response.headers.get('content-disposition')?.match(/filename="([^"]+)"/)?.[1]||'workspace.taskharbor.zip'}},
+  previewImport(file:File){return upload<{workspaceName:string;suggestedName:string;counts:{members:number;projects:number;tasks:number;documents:number;plans:number}}>('/workspaces/import/preview',file)},
+  importWorkspace(file:File){return upload<{id:string;name:string}>('/workspaces/import',file)},
 }

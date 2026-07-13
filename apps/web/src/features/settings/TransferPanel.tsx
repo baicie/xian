@@ -1,0 +1,17 @@
+import { useRef, useState } from 'react'
+import { ArchiveRestore, Download, FileArchive, Upload } from 'lucide-react'
+import { toast } from 'sonner'
+import { api } from '@/api'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+
+export default function TransferPanel({workspaceId,en,onRestored}:{workspaceId:string;en:boolean;onRestored:(workspaceId:string)=>Promise<void>}) {
+  const input=useRef<HTMLInputElement>(null),[file,setFile]=useState<File|null>(null),[preview,setPreview]=useState<Awaited<ReturnType<typeof api.previewImport>>|null>(null),[busy,setBusy]=useState(false)
+  const exportWorkspace=async()=>{setBusy(true);try{const result=await api.exportWorkspace(workspaceId),url=URL.createObjectURL(result.blob),link=document.createElement('a');link.href=url;link.download=result.filename;link.click();URL.revokeObjectURL(url);toast.success(en?'Backup exported':'备份已导出')}finally{setBusy(false)}}
+  const choose=async(next:File|undefined)=>{if(!next)return;setBusy(true);try{setFile(next);setPreview(await api.previewImport(next))}catch(reason){toast.error(reason instanceof Error?reason.message:'预检失败');setFile(null)}finally{setBusy(false);if(input.current)input.current.value=''}}
+  const restore=async()=>{if(!file)return;setBusy(true);try{const workspace=await api.importWorkspace(file);setPreview(null);setFile(null);await onRestored(workspace.id);toast.success(en?'Workspace restored':'工作区已恢复')}finally{setBusy(false)}}
+  return <Card className="settings-panel"><CardHeader><CardTitle><FileArchive/>{en?'Backup and restore':'备份与恢复'}</CardTitle><CardDescription>{en?'Export a portable ZIP or restore it as a new workspace after validation.':'导出可移植 ZIP，或在校验通过后恢复为新工作区。'}</CardDescription></CardHeader><CardContent><div className="transfer-actions"><div><Download/><span><strong>{en?'Export this workspace':'导出当前工作区'}</strong><small>JSON + CSV + Markdown + SHA-256</small></span><Button variant="outline" disabled={busy} onClick={()=>void exportWorkspace()}>{en?'Export':'导出'}</Button></div><div><Upload/><span><strong>{en?'Restore from backup':'从备份恢复'}</strong><small>{en?'Creates a new workspace; current data is untouched.':'创建新工作区，不覆盖当前数据。'}</small></span><input ref={input} hidden type="file" accept=".zip,.taskharbor.zip,application/zip" onChange={event=>void choose(event.target.files?.[0])}/><Button variant="outline" disabled={busy} onClick={()=>input.current?.click()}>{busy?(en?'Validating…':'校验中…'):(en?'Choose file':'选择文件')}</Button></div></div></CardContent>
+    <Dialog open={Boolean(preview)} onOpenChange={open=>!open&&(setPreview(null),setFile(null))}><DialogContent><DialogHeader><DialogTitle>{en?'Restore preview':'恢复预览'}</DialogTitle><DialogDescription>{en?`A new workspace named “${preview?.suggestedName}” will be created.`:`将创建新工作区“${preview?.suggestedName}”。`}</DialogDescription></DialogHeader><div className="restore-counts">{preview?Object.entries(preview.counts).map(([name,count])=><div key={name}><strong>{count}</strong><span>{name}</span></div>):null}</div><DialogFooter><Button variant="outline" onClick={()=>{setPreview(null);setFile(null)}}>{en?'Cancel':'取消'}</Button><Button disabled={busy} onClick={()=>void restore()}><ArchiveRestore data-icon="inline-start"/>{busy?(en?'Restoring…':'恢复中…'):(en?'Restore as new workspace':'恢复为新工作区')}</Button></DialogFooter></DialogContent></Dialog>
+  </Card>
+}

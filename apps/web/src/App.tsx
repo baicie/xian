@@ -1307,6 +1307,7 @@ export default function App() {
             projects={projects}
             onTasksChanged={reload}
             workspaceRole={workspaces.find((item) => item.id === workspaceId)?.role ?? "VIEWER"}
+            onWorkspaceRestored={async (id) => { const next=await api.workspaces();setWorkspaces(next);await loadWorkspace(id) }}
           />
         )}
       </main>
