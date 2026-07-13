@@ -43,4 +43,11 @@ export const api={
   async exportWorkspace(workspaceId:string){const response=await fetch(`${base}/workspaces/${workspaceId}/export`,{credentials:'include'});if(!response.ok)throw new Error('导出失败');return{blob:await response.blob(),filename:response.headers.get('content-disposition')?.match(/filename="([^"]+)"/)?.[1]||'workspace.taskharbor.zip'}},
   previewImport(file:File){return upload<{workspaceName:string;suggestedName:string;counts:{members:number;projects:number;tasks:number;documents:number;plans:number}}>('/workspaces/import/preview',file)},
   importWorkspace(file:File){return upload<{id:string;name:string}>('/workspaces/import',file)},
+  githubIntegration(workspaceId:string){return request<{projectId:string;owner:string;repo:string;tokenLast4:string;updatedAt:string}|null>(`/workspaces/${workspaceId}/integrations/github`)},
+  configureGitHub(workspaceId:string,input:{repoUrl:string;token:string;projectId:string}){return request(`/workspaces/${workspaceId}/integrations/github`,{method:'PUT',body:JSON.stringify(input)})},
+  removeGitHub(workspaceId:string){return request(`/workspaces/${workspaceId}/integrations/github`,{method:'DELETE'})},
+  pushGitHub(workspaceId:string){return request<{tasks:number;documents:number}>(`/workspaces/${workspaceId}/integrations/github/push`,{method:'POST'})},
+  pullGitHub(workspaceId:string){return request<{imported:number;conflicts:number}>(`/workspaces/${workspaceId}/integrations/github/pull`,{method:'POST'})},
+  githubConflicts(workspaceId:string){return request<{id:string;entityId:string;remoteRef:string;remoteData:{title:string;description:string};createdAt:string;localTitle:string}[]>(`/workspaces/${workspaceId}/integrations/github/conflicts`)},
+  resolveGitHubConflict(workspaceId:string,conflictId:string,resolution:'KEEP_LOCAL'|'USE_GITHUB'){return request(`/workspaces/${workspaceId}/integrations/github/conflicts/${conflictId}/resolve`,{method:'POST',body:JSON.stringify({resolution})})},
 }
