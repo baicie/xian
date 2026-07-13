@@ -1,0 +1,9 @@
+import { FormEvent, useState } from 'react'
+import { ArrowRight } from 'lucide-react'
+import { api } from './api'
+
+export default function AuthScreen({onReady}:{onReady:()=>void}){
+  const [mode,setMode]=useState<'login'|'register'>('login'),[error,setError]=useState(''),[busy,setBusy]=useState(false)
+  async function submit(event:FormEvent<HTMLFormElement>){event.preventDefault();setBusy(true);setError('');const values=Object.fromEntries(new FormData(event.currentTarget));try{if(mode==='register')await api.register({email:String(values.email),name:String(values.name),password:String(values.password),workspaceName:String(values.workspaceName)});await api.login(String(values.email),String(values.password));onReady()}catch(error){setError(error instanceof Error?error.message:'请求失败')}finally{setBusy(false)}}
+  return <main className="auth-page"><section className="auth-note"><span className="brand-mark">闲</span><p>轻量协作，<br/>清晰抵达。</p><small>项目、看板与团队协作，都在一个安静的工作台里。</small></section><form className="auth-form" onSubmit={submit}><div><span className="eyebrow">XIAN WORKSPACE</span><h1>{mode==='login'?'欢迎回来':'创建你的工作区'}</h1><p>{mode==='login'?'继续今天的工作。':'几秒钟后即可开始协作。'}</p></div>{mode==='register'&&<><label>你的名字<input name="name" required maxLength={80}/></label><label>工作区名称<input name="workspaceName" required maxLength={80}/></label></>}<label>邮箱<input name="email" type="email" required autoComplete="email"/></label><label>密码<input name="password" type="password" required minLength={mode==='register'?10:1} autoComplete={mode==='login'?'current-password':'new-password'}/></label>{error&&<p className="auth-error" role="alert">{error}</p>}<button className="button primary" disabled={busy}>{busy?'请稍候…':mode==='login'?'登录':'注册并进入'}<ArrowRight size={16}/></button><button type="button" className="auth-switch" onClick={()=>setMode(mode==='login'?'register':'login')}>{mode==='login'?'还没有账号？创建工作区':'已有账号？返回登录'}</button></form></main>
+}
