@@ -48,9 +48,10 @@ import {
 import { Input } from "./components/ui/input";
 
 const DocumentsPage = lazy(() => import("./features/documents/DocumentsPage"));
+const PlansPage = lazy(() => import("./features/plans/PlansPage"));
 
 export type Page =
-  "overview" | "tasks" | "calendar" | "documents" | "archived" | "members" | "settings";
+  "overview" | "tasks" | "calendar" | "plans" | "documents" | "archived" | "members" | "settings";
 type Props = {
   page: Exclude<Page, "tasks">;
   tasks: Task[];
@@ -60,6 +61,7 @@ type Props = {
   user: string;
   lang: "zh" | "en";
   projects: { id: string; name: string }[];
+  onTasksChanged: () => Promise<void>;
 };
 type Role = "ADMIN" | "MEMBER" | "VIEWER";
 
@@ -72,6 +74,7 @@ export default function WorkspacePage({
   user,
   lang,
   projects,
+  onTasksChanged,
 }: Props) {
   const [members, setMembers] = useState<
       Awaited<ReturnType<typeof api.members>>
@@ -94,6 +97,7 @@ export default function WorkspacePage({
         .catch((reason) => setError(reason.message));
   }, [page, workspaceId, projectId]);
   if (page === "documents") return <Suspense fallback={<main className="boot">{en ? "Loading documents…" : "正在加载文档…"}</main>}><DocumentsPage workspaceId={workspaceId} projects={projects} en={en} /></Suspense>;
+  if (page === "plans") return <Suspense fallback={<main className="boot">{en ? "Loading plans…" : "正在加载计划…"}</main>}><PlansPage workspaceId={workspaceId} projects={projects} en={en} onApplied={onTasksChanged} /></Suspense>;
   if (page === "overview")
     return (
       <PageShell

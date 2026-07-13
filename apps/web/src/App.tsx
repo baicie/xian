@@ -113,6 +113,7 @@ const copy = {
     myTasks: "我的任务",
     calendar: "日历",
     documents: "设计文档",
+    plans: "任务规划",
     project: "项目",
     newProject: "新建项目",
     archived: "已归档",
@@ -168,6 +169,7 @@ const copy = {
     myTasks: "My tasks",
     calendar: "Calendar",
     documents: "Documents",
+    plans: "Planning",
     project: "Projects",
     newProject: "New project",
     archived: "Archived",
@@ -353,6 +355,14 @@ function Sidebar({
         >
           <FileText data-icon="inline-start" />
           {t.documents}
+        </Button>
+        <Button
+          variant="ghost"
+          className={`nav-item ${page === "plans" ? "active" : ""}`}
+          onClick={() => onNavigate("plans")}
+        >
+          <Sparkles data-icon="inline-start" />
+          {t.plans}
         </Button>
         <p className="nav-label nav-label--project">
           {t.project}
@@ -1295,6 +1305,7 @@ export default function App() {
             user={user}
             lang={lang}
             projects={projects}
+            onTasksChanged={reload}
           />
         )}
       </main>
