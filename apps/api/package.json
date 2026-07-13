@@ -12,6 +12,7 @@
     "db:migrate": "tsx src/database/migrate.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@nestjs/common": "latest",
     "@nestjs/core": "latest",
     "@nestjs/platform-express": "latest",
@@ -28,10 +29,10 @@
   "devDependencies": {
     "@types/cookie-parser": "latest",
     "@types/express": "latest",
+    "@types/supertest": "latest",
+    "supertest": "latest",
     "tsx": "latest",
     "typescript": "latest",
-    "supertest": "latest",
-    "@types/supertest": "latest",
     "vitest": "latest"
   }
 }

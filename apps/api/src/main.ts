@@ -8,7 +8,7 @@ import { AppModule } from './app.module.js'
 import { ApiErrorFilter } from './common/error.filter.js'
 
 const app = await NestFactory.create(AppModule, { bodyParser: true })
-app.setGlobalPrefix('api/v1')
+app.setGlobalPrefix('api/v1',{exclude:['mcp']})
 app.use(helmet({ contentSecurityPolicy: false }))
 app.useGlobalFilters(new ApiErrorFilter())
 const origin = process.env.APP_ORIGIN ?? 'http://localhost:5173'
