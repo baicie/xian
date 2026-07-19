@@ -4,12 +4,14 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "npm run build && (tsc -p tsconfig.json --watch --preserveWatchOutput & node --watch dist/main.js)",
-    "build": "tsc -p tsconfig.json && cp -R src/database/migrations dist/database/",
+    "dev": "pnpm run build && concurrently --kill-others --names types,server \"pnpm run dev:types\" \"pnpm run dev:server\"",
+    "dev:types": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "dev:server": "node --env-file=../../.env --watch dist/main.js",
+    "build": "tsc -p tsconfig.json && node -e \"require('node:fs').cpSync('src/database/migrations', 'dist/database/migrations', { recursive: true })\"",
     "start": "node dist/main.js",
     "test": "vitest run --config vitest.config.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "db:migrate": "tsx src/database/migrate.ts"
+    "db:migrate": "tsx --env-file=../../.env src/database/migrate.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
@@ -20,6 +22,8 @@
     "@node-rs/argon2": "latest",
     "cookie-parser": "latest",
     "drizzle-orm": "latest",
+    "exceljs": "^4.4.0",
+    "express": "^5.2.1",
     "fflate": "^0.8.3",
     "helmet": "latest",
     "postgres": "latest",
@@ -31,6 +35,7 @@
     "@types/cookie-parser": "latest",
     "@types/express": "latest",
     "@types/supertest": "latest",
+    "concurrently": "^10.0.3",
     "supertest": "latest",
     "tsx": "latest",
     "typescript": "latest",

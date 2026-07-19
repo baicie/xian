@@ -1,6 +1,8 @@
 import { FormEvent, lazy, Suspense, useEffect, useState } from "react";
 import {
   CalendarDays,
+  ChevronLeft,
+  ChevronRight,
   CheckCircle2,
   CircleAlert,
   FolderKanban,
@@ -65,6 +67,7 @@ type Props = {
   lang: "zh" | "en";
   projects: { id: string; name: string }[];
   onTasksChanged: () => Promise<void>;
+  onTaskOpen: (task: Task) => void;
   workspaceRole: string;
   onWorkspaceRestored: (workspaceId: string) => Promise<void>;
 };
@@ -80,6 +83,7 @@ export default function WorkspacePage({
   lang,
   projects,
   onTasksChanged,
+  onTaskOpen,
   workspaceRole,
   onWorkspaceRestored,
 }: Props) {
@@ -143,15 +147,9 @@ export default function WorkspacePage({
     return (
       <PageShell
         title={en ? "Calendar" : "日历"}
-        subtitle={en ? "Tasks grouped by due date" : "按截止日期查看任务"}
+        subtitle={en ? "Project deadlines in a monthly view" : "按月查看项目任务截止日期"}
       >
-        <TaskRows
-          tasks={tasks
-            .filter((task) => task.due !== "未设置")
-            .sort((a, b) => a.due.localeCompare(b.due))}
-          empty={en ? "No tasks with due dates" : "暂无设置截止日期的任务"}
-          en={en}
-        />
+        <TaskCalendar tasks={tasks} en={en} onTaskOpen={onTaskOpen}/>
       </PageShell>
     );
   if (page === "archived")
@@ -441,6 +439,13 @@ function TaskRows({
   ) : (
     <PageEmpty icon={<CalendarDays />} text={empty} />
   );
+}
+function TaskCalendar({tasks,en,onTaskOpen}:{tasks:Task[];en:boolean;onTaskOpen:(task:Task)=>void}) {
+  const today=new Date(),[cursor,setCursor]=useState(()=>new Date(today.getFullYear(),today.getMonth(),1)),year=cursor.getFullYear(),month=cursor.getMonth()
+  const datedTasks=tasks.filter(task=>/^\d{4}-\d{2}-\d{2}$/.test(task.due)),byDate=new Map<string,Task[]>()
+  datedTasks.forEach(task=>byDate.set(task.due,[...(byDate.get(task.due)??[]),task]))
+  const first=new Date(year,month,1),offset=(first.getDay()+6)%7,cells=Array.from({length:42},(_,index)=>new Date(year,month,1-offset+index)),format=(date:Date)=>`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`,todayKey=format(today),weekdays=en?['Mon','Tue','Wed','Thu','Fri','Sat','Sun']:['周一','周二','周三','周四','周五','周六','周日'],monthLabel=new Intl.DateTimeFormat(en?'en-US':'zh-CN',{year:'numeric',month:'long'}).format(cursor)
+  return <div className="task-calendar"><div className="calendar-toolbar"><strong>{monthLabel}</strong><span><Button variant="outline" size="sm" onClick={()=>setCursor(new Date(today.getFullYear(),today.getMonth(),1))}>{en?'Today':'今天'}</Button><Button variant="outline" size="icon-sm" aria-label={en?'Previous month':'上个月'} onClick={()=>setCursor(new Date(year,month-1,1))}><ChevronLeft/></Button><Button variant="outline" size="icon-sm" aria-label={en?'Next month':'下个月'} onClick={()=>setCursor(new Date(year,month+1,1))}><ChevronRight/></Button></span></div><div className="calendar-scroll"><div className="calendar-grid"><div className="calendar-weekdays">{weekdays.map(day=><span key={day}>{day}</span>)}</div><div className="calendar-days">{cells.map(date=>{const key=format(date),dayTasks=byDate.get(key)??[],outside=date.getMonth()!==month;return <div className={`calendar-day ${outside?'is-outside':''} ${key===todayKey?'is-today':''}`} key={key}><time dateTime={key}>{date.getDate()}</time><div className="calendar-events">{dayTasks.slice(0,3).map(task=><Button type="button" variant="ghost" className={`calendar-event calendar-event--${task.kind.toLowerCase()}`} key={task.id} onClick={()=>onTaskOpen(task)}><span>{task.title}</span></Button>)}{dayTasks.length>3?<small>+{dayTasks.length-3} {en?'more':'项'}</small>:null}</div></div>})}</div></div></div>{datedTasks.length===0?<p className="calendar-empty">{en?'Add a due date to a task and it will appear here.':'在任务详情中设置截止日期后，任务会显示在这里。'}</p>:null}</div>
 }
 function PageEmpty({ icon, text }: { icon: React.ReactNode; text: string }) {
   return (

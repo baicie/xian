@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
   CalendarDays,
@@ -7,12 +7,17 @@ import {
   Clock3,
   Command,
   FileText,
+  FileUp,
+  CircleDot,
+  ExternalLink,
+  GitPullRequest,
   Filter,
   LayoutDashboard,
   List,
   LogOut,
   Moon,
   MoreHorizontal,
+  PencilLine,
   Plus,
   Search,
   Settings,
@@ -31,7 +36,7 @@ import {
   filterTasks,
   moveTask,
 } from "./board";
-import { api } from "./api";
+import { api, type GitHubReference } from "./api";
 import AuthScreen from "./AuthScreen";
 import WorkspacePage, { Page } from "./WorkspacePage";
 import ChoiceSelect from "./components/ChoiceSelect";
@@ -160,6 +165,7 @@ const copy = {
     taskDetails: "任务详情",
     cancel: "取消",
     save: "保存任务",
+    renameProject: "重命名项目",
     deleteProject: "删除项目",
     deleteTitle: "确认删除项目？",
     deleteDescription:
@@ -216,6 +222,7 @@ const copy = {
     taskDetails: "Task details",
     cancel: "Cancel",
     save: "Save task",
+    renameProject: "Rename project",
     deleteProject: "Delete project",
     deleteTitle: "Delete this project?",
     deleteDescription:
@@ -256,6 +263,7 @@ function Sidebar({
   activeProject,
   setActiveProject,
   onNewProject,
+  onRenameProject,
   onDeleteProject,
   taskCount,
   user,
@@ -276,6 +284,7 @@ function Sidebar({
   activeProject: number;
   setActiveProject: (index: number) => void;
   onNewProject: () => void;
+  onRenameProject: (project: Project) => void;
   onDeleteProject: (project: Project) => void;
   taskCount: number;
   user: string;
@@ -410,6 +419,13 @@ function Sidebar({
                 <MoreHorizontal />
               </DropdownMenuTrigger>
               <DropdownMenuContent side="right" align="start">
+                <DropdownMenuGroup>
+                  <DropdownMenuItem onClick={() => onRenameProject(project)}>
+                    <PencilLine />
+                    {t.renameProject}
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+                <DropdownMenuSeparator />
                 <DropdownMenuGroup>
                   <DropdownMenuItem
                     variant="destructive"
@@ -564,6 +580,7 @@ function TaskCard({
 
 function TaskDialog({
   task,
+  workspaceId,
   columns,
   members,
   code,
@@ -572,24 +589,31 @@ function TaskDialog({
   t,
 }: {
   task: Task | null;
+  workspaceId: string;
   columns: BoardColumn[];
   members: Member[];
   code: string;
   onClose: () => void;
-  onSave: (task: Task) => void;
+  onSave: (task: Task) => Promise<void>;
   t: Copy;
 }) {
   const [draft, setDraft] = useState<Task | null>(task);
+  const [githubReferences,setGithubReferences]=useState<GitHubReference[]|null>(null),[githubLinks,setGithubLinks]=useState<GitHubReference[]>([]),[initialGithubLinks,setInitialGithubLinks]=useState<GitHubReference[]>([])
   useEffect(() => setDraft(task), [task]);
+  useEffect(()=>{if(!task||task.id==='new'){setGithubReferences(null);setGithubLinks([]);setInitialGithubLinks([]);return}let active=true;Promise.all([api.githubReferences(workspaceId),api.taskGitHubLinks(workspaceId,task.id)]).then(([references,links])=>{if(active){setGithubReferences(references.projectId===task.projectId?references.items:null);setGithubLinks(links);setInitialGithubLinks(links)}}).catch(()=>{if(active){setGithubReferences(null);setGithubLinks([]);setInitialGithubLinks([])}});return()=>{active=false}},[task?.id,workspaceId])
   if (!draft) return null;
   return (
     <Sheet open={Boolean(task)} onOpenChange={(open) => !open && onClose()}>
       <SheetContent className="task-sheet">
         <form
           className="task-sheet-form"
-          onSubmit={(event: FormEvent) => {
+          onSubmit={async (event: FormEvent) => {
             event.preventDefault();
-            onSave(draft);
+            try{
+              const linkKeys=(links:GitHubReference[])=>links.map(link=>`${link.kind}:${link.number}`).sort().join(',')
+              if(draft.id!=='new'&&githubReferences&&linkKeys(githubLinks)!==linkKeys(initialGithubLinks))await api.setTaskGitHubLinks(workspaceId,draft.id,githubLinks.map(({kind,number})=>({kind,number})))
+              await onSave(draft);
+            }catch(reason){toast.error(reason instanceof Error?reason.message:(t.taskDetails==='任务详情'?'保存 GitHub 关联失败':'Failed to save GitHub links'))}
           }}
         >
           <SheetHeader>
@@ -701,6 +725,7 @@ function TaskDialog({
                 onChange={(event)=>setDraft({...draft,description:event.target.value})}
               />
             </Field>
+            {githubReferences?<Field><FieldLabel>{t.taskDetails==='任务详情'?'关联 GitHub':'GitHub links'}</FieldLabel><div className="github-reference-list">{githubReferences.length?githubReferences.map(reference=>{const checked=githubLinks.some(link=>link.kind===reference.kind&&link.number===reference.number);return <label className="github-reference" key={`${reference.kind}:${reference.number}`}><input type="checkbox" checked={checked} onChange={()=>setGithubLinks(current=>checked?current.filter(link=>link.kind!==reference.kind||link.number!==reference.number):[...current,reference])}/>{reference.kind==='PR'?<GitPullRequest/>:<CircleDot/>}<span><strong>{reference.kind} #{reference.number}</strong><small>{reference.title}</small></span><a href={reference.url} target="_blank" rel="noreferrer" aria-label={`Open ${reference.kind} ${reference.number}`}><ExternalLink/></a></label>}):<p className="github-reference-empty">{t.taskDetails==='任务详情'?'仓库中暂无 Issue 或 PR':'No Issues or pull requests found'}</p>}</div></Field>:null}
           </FieldGroup></div>
           <SheetFooter className="task-sheet-footer">
             <Button type="button" variant="outline" onClick={onClose}>
@@ -824,6 +849,98 @@ function CreateDialog({
     </Dialog>
   );
 }
+
+function RenameProjectDialog({
+  project,
+  lang,
+  onClose,
+  onRename,
+}: {
+  project: Project | null;
+  lang: Lang;
+  onClose: () => void;
+  onRename: (project: Project, name: string) => Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const en = lang === "en";
+
+  useEffect(() => {
+    setName(project?.name ?? "");
+    setError("");
+  }, [project]);
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!project) return;
+    const nextName = name.trim();
+    if (!nextName) {
+      setError(en ? "Project name is required" : "项目名称不能为空");
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    try {
+      await onRename(project, nextName);
+      onClose();
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : en
+            ? "Rename failed"
+            : "重命名失败",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open={Boolean(project)} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <form onSubmit={submit}>
+          <DialogHeader>
+            <DialogTitle>{en ? "Rename project" : "重命名项目"}</DialogTitle>
+            <DialogDescription>
+              {en
+                ? "Change the project name. Its code and task keys stay the same."
+                : "修改项目名称，项目代码和任务编号保持不变。"}
+            </DialogDescription>
+          </DialogHeader>
+          <FieldGroup className="create-form">
+            <Field data-invalid={Boolean(error)}>
+              <FieldLabel htmlFor="rename-project-name">
+                {en ? "Project name" : "项目名称"}
+              </FieldLabel>
+              <Input
+                id="rename-project-name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                required
+                maxLength={120}
+                autoFocus
+                aria-invalid={Boolean(error)}
+              />
+              {error ? <FieldError>{error}</FieldError> : null}
+            </Field>
+          </FieldGroup>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              {en ? "Cancel" : "取消"}
+            </Button>
+            <Button type="submit" disabled={busy || !name.trim()}>
+              {busy ? (en ? "Saving..." : "保存中...") : en ? "Save" : "保存"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function App() {
   const [auth, setAuth] = useState<"loading" | "out" | "in">("loading"),
     [user, setUser] = useState("");
@@ -835,11 +952,13 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>([]),
     [error, setError] = useState(""),
     [query, setQuery] = useState(""),
-    [kind, setKind] = useState<"ALL" | TaskKind>("ALL");
+    [kind, setKind] = useState<"ALL" | TaskKind>("ALL"),
+    [importDragging,setImportDragging]=useState(false);
   const [page, setPage] = useState<Page>("tasks"),
     [activeProject, setActiveProject] = useState(0),
     [view, setView] = useState<"board" | "list">("board"),
     [editing, setEditing] = useState<Task | null>(null),
+    [renaming, setRenaming] = useState<Project | null>(null),
     [deleting, setDeleting] = useState<Project | null>(null),
     [creating, setCreating] = useState<"workspace" | "project" | null>(null);
   const [lang, setLang] = useState<Lang>(
@@ -849,6 +968,7 @@ export default function App() {
       () => (localStorage.getItem("theme") as Theme) || "light",
     );
   const searchRef = useRef<HTMLInputElement>(null),
+    importRef = useRef<HTMLInputElement>(null),
     t: Copy = copy[lang];
   const loadWorkspace = async (id: string) => {
     const [nextProjects, nextMembers] = await Promise.all([
@@ -958,6 +1078,18 @@ export default function App() {
         version: 1,
       });
   };
+  const importTasks = async (file:File) => {
+    const column=columns[0]
+    if(!project||!column)return
+    if(!file.name.toLowerCase().endsWith('.xlsx')){setError(lang==='zh'?'仅支持 .xlsx 文件':'Only .xlsx files are supported');return}
+    try{
+      const result=await api.importTasks(workspaceId,file,project.id,column.id)
+      await reload()
+      toast.success(lang==='zh'?`已从“${result.sheetName}”导入 ${result.imported} 个任务`:`Imported ${result.imported} tasks from “${result.sheetName}”`)
+    }catch(reason){setError(reason instanceof Error?reason.message:'Excel 导入失败')}
+    finally{if(importRef.current)importRef.current.value=''}
+  }
+  const dropImport=(event:DragEvent)=>{event.preventDefault();setImportDragging(false);const file=event.dataTransfer.files[0];if(!file)return;if(!file.name.toLowerCase().endsWith('.xlsx')){setError(lang==='zh'?'仅支持 .xlsx 文件':'Only .xlsx files are supported');return}void importTasks(file)}
   const move = async (id: string, column: ColumnId) => {
     const task = tasks.find((item) => item.id === id);
     if (!task) return;
@@ -991,6 +1123,15 @@ export default function App() {
     setWorkspaces(next);
     await loadWorkspace(workspace.id);
     toast.success(lang === "zh" ? "工作区已创建" : "Workspace created");
+  };
+  const renameProject = async (target: Project, name: string) => {
+    if (name === target.name) return;
+    await api.updateProject(workspaceId, target.id, { name });
+    const next = await api.projects(workspaceId);
+    setProjects(next);
+    const nextIndex = next.findIndex((item) => item.id === target.id);
+    if (nextIndex >= 0) setActiveProject(nextIndex);
+    toast.success(lang === "zh" ? "项目已重命名" : "Project renamed");
   };
   const selectWorkspace = async (id: string) => {
     try {
@@ -1038,6 +1179,7 @@ export default function App() {
         setPage("tasks");
       }}
       onNewProject={() => setCreating("project")}
+      onRenameProject={setRenaming}
       onDeleteProject={setDeleting}
       taskCount={tasks.length}
       user={user}
@@ -1123,10 +1265,17 @@ export default function App() {
                   <h1>{project.name}</h1>
                   <p>{t.tagline}</p>
                 </div>
-                <Button onClick={createTask}>
-                  <Plus data-icon="inline-start" />
-                  {t.newTask}
-                </Button>
+                <span className="title-actions">
+                  <input ref={importRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={event=>event.target.files?.[0]&&void importTasks(event.target.files[0])}/>
+                  <Button variant="outline" className={`excel-drop ${importDragging?'is-dragging':''}`} onClick={()=>importRef.current?.click()} onDragEnter={event=>{event.preventDefault();setImportDragging(true)}} onDragOver={event=>event.preventDefault()} onDragLeave={()=>setImportDragging(false)} onDrop={dropImport}>
+                    <FileUp data-icon="inline-start" />
+                    {importDragging?(lang==='zh'?'松开导入':'Drop to import'):(lang==='zh'?'拖拽或选择 Excel':'Drop or choose Excel')}
+                  </Button>
+                  <Button onClick={createTask}>
+                    <Plus data-icon="inline-start" />
+                    {t.newTask}
+                  </Button>
+                </span>
               </div>
               {error ? (
                 <p className="page-error" role="alert">
@@ -1295,6 +1444,7 @@ export default function App() {
             lang={lang}
             projects={projects}
             onTasksChanged={reload}
+            onTaskOpen={setEditing}
             workspaceRole={workspaces.find((item) => item.id === workspaceId)?.role ?? "VIEWER"}
             onWorkspaceRestored={async (id) => { const next=await api.workspaces();setWorkspaces(next);await loadWorkspace(id) }}
           />
@@ -1303,11 +1453,12 @@ export default function App() {
       {project ? (
         <TaskDialog
           task={editing}
+          workspaceId={workspaceId}
           columns={columns}
           members={members}
           code={project.code}
           onClose={() => setEditing(null)}
-          onSave={(task) => void updateTask(task)}
+          onSave={updateTask}
           t={t}
         />
       ) : null}
@@ -1318,6 +1469,12 @@ export default function App() {
         onCreate={(name, code) =>
           code ? createProject(name, code) : createWorkspace(name)
         }
+      />
+      <RenameProjectDialog
+        project={renaming}
+        lang={lang}
+        onClose={() => setRenaming(null)}
+        onRename={renameProject}
       />
       <AlertDialog
         open={Boolean(deleting)}

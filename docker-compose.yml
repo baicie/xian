@@ -15,7 +15,7 @@ services:
       POSTGRES_DB: xian
       POSTGRES_USER: xian
       POSTGRES_PASSWORD: xian
-    ports: ["5432:5432"]
+    ports: ["${POSTGRES_PORT:-5432}:5432"]
     volumes: ["xian-data:/var/lib/postgresql/data"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U xian"]

@@ -1,9 +1,11 @@
-import { Body, ConflictException, Controller, Delete, Get, Injectable, NotFoundException, Param, Patch, Post, Query, Req } from '@nestjs/common'
+import { BadRequestException, Body, ConflictException, Controller, Delete, Get, Injectable, NotFoundException, Param, Patch, Post, Query, Req, UploadedFile, UseInterceptors } from '@nestjs/common'
+import { FileInterceptor } from '@nestjs/platform-express'
 import { z } from 'zod'
 import { DatabaseService } from '../database/database.service.js'
 import { commentSchema, taskPatchSchema, taskSchema } from '../common/contracts.js'
 import { AppRequest, parse } from '../common/http.js'
 import { WorkspaceService } from './workspaces.js'
+import { parseTaskWorkbook } from './task-xlsx.js'
 
 const listSchema=z.object({projectId:z.string().uuid().optional(),query:z.string().max(200).optional(),priority:z.enum(['HIGH','MEDIUM','LOW']).optional(),kind:z.enum(['TASK','STORY','BUG']).optional(),archived:z.preprocess(value=>value==='true',z.boolean()).default(false),page:z.coerce.number().int().min(1).default(1),pageSize:z.coerce.number().int().min(1).max(100).default(50)})
 
@@ -33,6 +35,24 @@ export class TaskService {
       return {...task,key:`${project.code}-${project.number}`}
     })
   }
+  async importXlsx(workspaceId:string,userId:string,projectId:string,columnId:string,data:Buffer) {
+    await this.workspaces.role(workspaceId,userId,'task.create')
+    const [column]=await this.db.client`SELECT 1 FROM board_columns WHERE id=${columnId} AND project_id=${projectId} AND workspace_id=${workspaceId}`
+    if(!column)throw new NotFoundException({code:'COLUMN_NOT_FOUND',message:'看板列不存在'})
+    let parsed:Awaited<ReturnType<typeof parseTaskWorkbook>>
+    try{parsed=await parseTaskWorkbook(data)}catch(error){throw new BadRequestException({code:'TASK_XLSX_INVALID',message:error instanceof Error?error.message:'Excel 文件无法解析'})}
+    return this.db.client.begin(async sql=>{
+      const [project]=await sql<{startNumber:number;code:string}[]>`UPDATE projects SET next_task_number=next_task_number+${parsed.tasks.length} WHERE id=${projectId} AND workspace_id=${workspaceId} AND deleted_at IS NULL RETURNING next_task_number-${parsed.tasks.length} AS "startNumber",code`
+      if(!project)throw new NotFoundException({code:'PROJECT_NOT_FOUND',message:'项目不存在'})
+      const [position]=await sql<{value:number}[]>`SELECT coalesce(max(position),0) AS value FROM tasks WHERE column_id=${columnId}`
+      for(const [index,item] of parsed.tasks.entries()){
+        const number=project.startNumber+index
+        const [task]=await sql<{id:string}[]>`INSERT INTO tasks(workspace_id,project_id,column_id,number,title,description,kind,priority,creator_id,position) VALUES(${workspaceId},${projectId},${columnId},${number},${item.title},${item.description},${item.kind},${item.priority},${userId},${Number(position?.value??0)+(index+1)*1000}) RETURNING id`
+        await sql`INSERT INTO activities(workspace_id,task_id,actor_id,action,data) VALUES(${workspaceId},${task!.id},${userId},'task.imported',${JSON.stringify({sheet:parsed.sheetName,row:item.sourceRow})}::jsonb)`
+      }
+      return{imported:parsed.tasks.length,ignoredRows:parsed.ignoredRows,sheetName:parsed.sheetName}
+    })
+  }
   async update(workspaceId:string,userId:string,id:string,input:ReturnType<typeof taskPatchSchema.parse>) {
     await this.workspaces.role(workspaceId,userId,'task.update')
     return this.db.client.begin(async sql=>{
@@ -54,6 +74,12 @@ export class TaskController {
   constructor(private readonly tasks:TaskService,private readonly workspaces:WorkspaceService,private readonly db:DatabaseService) {}
   @Get() list(@Req() req:AppRequest,@Param('workspaceId') workspaceId:string,@Query() query:unknown){return this.tasks.list(workspaceId,req.user!.id,query)}
   @Post() create(@Req() req:AppRequest,@Param('workspaceId') workspaceId:string,@Body() body:unknown){return this.tasks.create(workspaceId,req.user!.id,parse(taskSchema,body))}
+  @Post('import/xlsx')@UseInterceptors(FileInterceptor('file',{limits:{fileSize:10*1024*1024,files:1}})) importXlsx(@Req() req:AppRequest,@Param('workspaceId') workspaceId:string,@Body() body:Record<string,string>,@UploadedFile() file?:{buffer:Buffer;originalname:string}){
+    if(!file?.buffer)throw new BadRequestException({code:'TASK_XLSX_REQUIRED',message:'请选择 .xlsx 文件'})
+    if(!file.originalname.toLowerCase().endsWith('.xlsx'))throw new BadRequestException({code:'TASK_XLSX_TYPE',message:'仅支持 .xlsx 文件'})
+    const input=parse(z.object({projectId:z.string().uuid(),columnId:z.string().uuid()}),body)
+    return this.tasks.importXlsx(workspaceId,req.user!.id,input.projectId,input.columnId,file.buffer)
+  }
   @Patch(':id') update(@Req() req:AppRequest,@Param('workspaceId') workspaceId:string,@Param('id') id:string,@Body() body:unknown){return this.tasks.update(workspaceId,req.user!.id,id,parse(taskPatchSchema,body))}
   @Delete(':id') async remove(@Req() req:AppRequest,@Param('workspaceId') workspaceId:string,@Param('id') id:string){await this.workspaces.role(workspaceId,req.user!.id,'task.delete');await this.db.client`UPDATE tasks SET deleted_at=now(),deleted_by=${req.user!.id} WHERE id=${id} AND workspace_id=${workspaceId}`;return{ok:true}}
   @Post(':id/archive') async archive(@Req() req:AppRequest,@Param('workspaceId') workspaceId:string,@Param('id') id:string){await this.workspaces.role(workspaceId,req.user!.id,'task.update');await this.db.client`UPDATE tasks SET archived_at=now() WHERE id=${id} AND workspace_id=${workspaceId}`;return{ok:true}}

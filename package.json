@@ -3,10 +3,15 @@
   "private": true,
   "workspaces": ["apps/*"],
   "scripts": {
-    "dev": "npm run dev -w @xian/api & npm run dev -w @xian/web",
-    "build": "npm run build -w @xian/web && npm run build -w @xian/api",
-    "test": "npm test -w @xian/web && npm test -w @xian/api",
-    "db:migrate": "npm run db:migrate -w @xian/api",
-    "start": "npm run start -w @xian/api"
+    "dev": "pnpm --parallel --filter @xian/api --filter @xian/web run dev",
+    "build": "pnpm --filter @xian/web build && pnpm --filter @xian/api build",
+    "test": "pnpm --filter @xian/web test && pnpm --filter @xian/api test",
+    "db:migrate": "pnpm --filter @xian/api db:migrate",
+    "start": "pnpm --filter @xian/api start"
+  },
+  "pnpm": {
+    "overrides": {
+      "@types/node": "26.1.1"
+    }
   }
 }
