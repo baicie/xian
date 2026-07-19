@@ -7,6 +7,9 @@ export type PlanItem={id:string;position:number;title:string;description:string;
 export type ProjectPlan={id:string;projectId:string;title:string;goal:string;status:'DRAFT'|'APPLIED';source:string;version:number;items:PlanItem[];appliedAt:string|null;updatedAt:string}
 export type PlanSummary=Omit<ProjectPlan,'items'|'appliedAt'> & {projectName:string;itemCount:number}
 export type GitHubReference={kind:'ISSUE'|'PR';number:number;title:string;url:string;state:'open'|'closed'}
+export type TaskColumnRole='TITLE'|'DESCRIPTION'|'KIND'|'PRIORITY'|'IGNORE'
+export type TaskWorkbookMapping={titleColumn:number;descriptionColumns:number[];kindColumn:number|null;priorityColumn:number|null}
+export type TaskImportPreview={sheetName:string;headerRow:number;columns:{index:number;header:string;suggestedRole:TaskColumnRole}[];mapping:TaskWorkbookMapping;rows:{title:string;description:string;kind:Task['kind'];priority:'HIGH'|'MEDIUM'|'LOW';sourceRow:number;errors:string[];duplicateInFile:boolean;duplicate:boolean}[];ignoredRows:number;counts:{total:number;valid:number;invalid:number;duplicates:number;ignored:number}}
 
 async function uploadFields<T>(path:string,file:File,fields:Record<string,string>){const body=new FormData();body.append('file',file);Object.entries(fields).forEach(([key,value])=>body.append(key,value));const response=await fetch('/api/v1'+path,{method:'POST',body,credentials:'include',headers:csrf?{'x-csrf-token':csrf}:{}});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||'上传失败');return data as T}
 
@@ -31,7 +34,8 @@ export const api={
   addMember(workspaceId:string,input:{email:string;role:'ADMIN'|'MEMBER'|'VIEWER'}){return request(`/workspaces/${workspaceId}/members`,{method:'POST',body:JSON.stringify(input)})},
   createTask(workspaceId:string,task:Task){return request(`/workspaces/${workspaceId}/tasks`,{method:'POST',body:JSON.stringify({projectId:task.projectId,columnId:task.column,title:task.title,description:task.description,kind:task.kind,priority:{高:'HIGH',中:'MEDIUM',低:'LOW'}[task.priority],assigneeIds:task.assigneeId?[task.assigneeId]:[],dueDate:task.due||null,labels:task.tags})})},
   updateTask(workspaceId:string,task:Task){return request<{id:string;version:number}>(`/workspaces/${workspaceId}/tasks/${task.id}`,{method:'PATCH',body:JSON.stringify({title:task.title,description:task.description,kind:task.kind,columnId:task.column,priority:{高:'HIGH',中:'MEDIUM',低:'LOW'}[task.priority],assigneeIds:task.assigneeId?[task.assigneeId]:[],dueDate:task.due||null,labels:task.tags,version:task.version})})},
-  importTasks(workspaceId:string,file:File,projectId:string,columnId:string){return uploadFields<{imported:number;ignoredRows:number;sheetName:string}>(`/workspaces/${workspaceId}/tasks/import/xlsx`,file,{projectId,columnId})},
+  previewTaskImport(workspaceId:string,file:File,projectId:string,mapping?:TaskWorkbookMapping){return uploadFields<TaskImportPreview>(`/workspaces/${workspaceId}/tasks/import/xlsx/preview`,file,{projectId,...(mapping?{mapping:JSON.stringify(mapping)}:{})})},
+  importTasks(workspaceId:string,file:File,projectId:string,columnId:string,mapping:TaskWorkbookMapping){return uploadFields<{imported:number;invalidRows:number;duplicateRows:number;ignoredRows:number;sheetName:string}>(`/workspaces/${workspaceId}/tasks/import/xlsx`,file,{projectId,columnId,mapping:JSON.stringify(mapping)})},
   documents(workspaceId:string){return request<DocumentSummary[]>(`/workspaces/${workspaceId}/documents`)},
   document(workspaceId:string,documentId:string){return request<WorkspaceDocument>(`/workspaces/${workspaceId}/documents/${documentId}`)},
   createDocument(workspaceId:string,input:{title:string;kind?:DocumentKind;projectId?:string|null;content?:string}){return request<WorkspaceDocument>(`/workspaces/${workspaceId}/documents`,{method:'POST',body:JSON.stringify(input)})},
@@ -48,11 +52,12 @@ export const api={
   async exportWorkspace(workspaceId:string){const response=await fetch(`${base}/workspaces/${workspaceId}/export`,{credentials:'include'});if(!response.ok)throw new Error('导出失败');return{blob:await response.blob(),filename:response.headers.get('content-disposition')?.match(/filename="([^"]+)"/)?.[1]||'workspace.taskharbor.zip'}},
   previewImport(file:File){return upload<{workspaceName:string;suggestedName:string;counts:{members:number;projects:number;tasks:number;documents:number;plans:number}}>('/workspaces/import/preview',file)},
   importWorkspace(file:File){return upload<{id:string;name:string}>('/workspaces/import',file)},
-  githubIntegration(workspaceId:string){return request<{projectId:string;owner:string;repo:string;tokenLast4:string;updatedAt:string}|null>(`/workspaces/${workspaceId}/integrations/github`)},
-  configureGitHub(workspaceId:string,input:{repoUrl:string;token:string;projectId:string}){return request(`/workspaces/${workspaceId}/integrations/github`,{method:'PUT',body:JSON.stringify(input)})},
+  githubIntegration(workspaceId:string){return request<{projectId:string;owner:string;repo:string;tokenLast4:string;syncTasks:boolean;syncDocuments:boolean;pullIssues:boolean;updatedAt:string}|null>(`/workspaces/${workspaceId}/integrations/github`)},
+  configureGitHub(workspaceId:string,input:{repoUrl:string;token:string;projectId:string;syncTasks:boolean;syncDocuments:boolean;pullIssues:boolean}){return request(`/workspaces/${workspaceId}/integrations/github`,{method:'PUT',body:JSON.stringify(input)})},
   removeGitHub(workspaceId:string){return request(`/workspaces/${workspaceId}/integrations/github`,{method:'DELETE'})},
   pushGitHub(workspaceId:string){return request<{tasks:number;documents:number}>(`/workspaces/${workspaceId}/integrations/github/push`,{method:'POST'})},
-  pullGitHub(workspaceId:string){return request<{imported:number;conflicts:number}>(`/workspaces/${workspaceId}/integrations/github/pull`,{method:'POST'})},
+  pullGitHub(workspaceId:string){return request<{imported:number;conflicts:number;disabled?:boolean}>(`/workspaces/${workspaceId}/integrations/github/pull`,{method:'POST'})},
+  githubDiagnostics(workspaceId:string){return request<{ok:boolean;repository:string;private:boolean;issuesReadable:boolean;repositoryWritable:boolean;checkedAt:string}>(`/workspaces/${workspaceId}/integrations/github/diagnostics`)},
   githubConflicts(workspaceId:string){return request<{id:string;entityId:string;remoteRef:string;remoteData:{title:string;description:string};createdAt:string;localTitle:string}[]>(`/workspaces/${workspaceId}/integrations/github/conflicts`)},
   githubReferences(workspaceId:string){return request<{projectId:string;items:GitHubReference[]}>(`/workspaces/${workspaceId}/integrations/github/references`)},
   taskGitHubLinks(workspaceId:string,taskId:string){return request<GitHubReference[]>(`/workspaces/${workspaceId}/integrations/github/tasks/${taskId}/links`)},

@@ -2,7 +2,7 @@
 
 ## Objective
 
-Extend Task Harbor with model-facing project planning, versioned design documents, portable backup/restore, optional GitHub mirroring, and clearer task UI. PostgreSQL remains authoritative; external systems never bypass workspace permissions or audit logging.
+Extend 闲序 with model-facing project planning, versioned design documents, portable backup/restore, optional GitHub mirroring, and clearer task UI. PostgreSQL remains authoritative; external systems never bypass workspace permissions or audit logging.
 
 ## Confirmed Product Boundaries
 
@@ -22,11 +22,11 @@ Extend Task Harbor with model-facing project planning, versioned design document
 
 ## Commands
 
-- Develop: `npm run dev`
-- Unit tests: `npm test`
-- Integration tests: `DATABASE_URL=postgres://xian:xian@localhost:5432/xian npm run test:integration -w @xian/api`
-- Build: `npm run build`
-- Migrate: `npm run db:migrate`
+- Develop: `pnpm dev`
+- Unit tests: `pnpm test`
+- Integration tests: `DATABASE_URL=postgres://xian:xian@localhost:5432/xian pnpm --filter @xian/api test:integration`
+- Build: `pnpm build`
+- Migrate: `pnpm db:migrate`
 
 ## Project Structure
 

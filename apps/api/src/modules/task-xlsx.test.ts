@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs'
 import { describe,expect,it } from 'vitest'
-import { parseTaskWorkbook } from './task-xlsx.js'
+import { analyzeTaskWorkbook, parseTaskWorkbook } from './task-xlsx.js'
 
 describe('parseTaskWorkbook',()=>{
   it('imports a titled sheet whose headers start on the second row',async()=>{
@@ -21,5 +21,17 @@ describe('parseTaskWorkbook',()=>{
     sheet.addRow(['登录失败','无法登录','Bug','高'])
     const result=await parseTaskWorkbook(Buffer.from(await workbook.xlsx.writeBuffer()))
     expect(result.tasks[0]).toMatchObject({title:'登录失败',kind:'BUG',priority:'HIGH',description:'描述：无法登录'})
+  })
+
+  it('previews custom column mappings, invalid rows, and duplicates',async()=>{
+    const workbook=new ExcelJS.Workbook(),sheet=workbook.addWorksheet('自定义清单')
+    sheet.addRow(['记录名称','补充信息','分类'])
+    sheet.addRow(['发布检查','确认数据库迁移','需求'])
+    sheet.addRow(['发布检查','重复记录','任务'])
+    sheet.addRow(['','缺少标题','缺陷'])
+    const result=await analyzeTaskWorkbook(Buffer.from(await workbook.xlsx.writeBuffer()),{titleColumn:0,descriptionColumns:[1],kindColumn:2,priorityColumn:null})
+    expect(result.rows[0]).toMatchObject({title:'发布检查',kind:'STORY',errors:[],duplicateInFile:false})
+    expect(result.rows[1]?.duplicateInFile).toBe(true)
+    expect(result.rows[2]?.errors).toEqual(['缺少任务标题'])
   })
 })

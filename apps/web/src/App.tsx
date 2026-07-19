@@ -36,7 +36,7 @@ import {
   filterTasks,
   moveTask,
 } from "./board";
-import { api, type GitHubReference } from "./api";
+import { api, type GitHubReference, type TaskColumnRole, type TaskImportPreview, type TaskWorkbookMapping } from "./api";
 import AuthScreen from "./AuthScreen";
 import WorkspacePage, { Page } from "./WorkspacePage";
 import ChoiceSelect from "./components/ChoiceSelect";
@@ -941,6 +941,19 @@ function RenameProjectDialog({
   );
 }
 
+const importRoleLabels:Record<TaskColumnRole,{zh:string;en:string}>={TITLE:{zh:'任务标题',en:'Title'},DESCRIPTION:{zh:'描述',en:'Description'},KIND:{zh:'类型',en:'Type'},PRIORITY:{zh:'优先级',en:'Priority'},IGNORE:{zh:'忽略',en:'Ignore'}}
+function mappedRole(mapping:TaskWorkbookMapping,index:number):TaskColumnRole{return mapping.titleColumn===index?'TITLE':mapping.descriptionColumns.includes(index)?'DESCRIPTION':mapping.kindColumn===index?'KIND':mapping.priorityColumn===index?'PRIORITY':'IGNORE'}
+
+function TaskImportDialog({file,preview,mapping,busy,en,onClose,onMappingChange,onRefresh,onImport}:{file:File|null;preview:TaskImportPreview|null;mapping:TaskWorkbookMapping|null;busy:boolean;en:boolean;onClose:()=>void;onMappingChange:(index:number,role:TaskColumnRole)=>void;onRefresh:()=>void;onImport:()=>void}){
+  return <Dialog open={Boolean(file)} onOpenChange={open=>!open&&onClose()}><DialogContent className="task-import-dialog"><DialogHeader><DialogTitle>{en?'Review Excel import':'确认 Excel 导入'}</DialogTitle><DialogDescription>{file?.name}{preview?` · ${preview.sheetName}`:''}</DialogDescription></DialogHeader>
+    {busy&&!preview?<div className="import-loading">{en?'Analyzing workbook...':'正在分析工作簿...'}</div>:null}
+    {preview&&mapping?<><div className="import-summary"><span><strong>{preview.counts.valid}</strong>{en?'Ready':'可导入'}</span><span><strong>{preview.counts.invalid}</strong>{en?'Invalid':'无效'}</span><span><strong>{preview.counts.duplicates}</strong>{en?'Duplicates':'重复'}</span><span><strong>{preview.counts.ignored}</strong>{en?'Ignored':'忽略'}</span></div>
+      <div className="import-mapping"><div className="import-section-head"><strong>{en?'Column mapping':'字段映射'}</strong><Button type="button" variant="outline" size="sm" disabled={busy||mapping.titleColumn<0} onClick={onRefresh}>{busy?(en?'Analyzing...':'分析中...'):(en?'Refresh preview':'重新分析')}</Button></div><div className="import-mapping-grid">{preview.columns.map(column=><label key={column.index}><span>{column.header}</span><select value={mappedRole(mapping,column.index)} onChange={event=>onMappingChange(column.index,event.target.value as TaskColumnRole)}>{(Object.keys(importRoleLabels) as TaskColumnRole[]).map(role=><option value={role} key={role}>{importRoleLabels[role][en?'en':'zh']}</option>)}</select></label>)}</div></div>
+      <div className="import-rows"><div className="import-section-head"><strong>{en?'Row report':'行校验结果'}</strong><small>{en?`${preview.counts.total} data rows`:`${preview.counts.total} 行数据`}</small></div><div className="import-table"><div className="import-table-head"><span>{en?'Row':'行'}</span><span>{en?'Title':'标题'}</span><span>{en?'Type':'类型'}</span><span>{en?'Result':'结果'}</span></div>{preview.rows.map(row=><div className="import-table-row" key={row.sourceRow}><span>{row.sourceRow}</span><strong>{row.title||'—'}</strong><span>{row.kind}</span><span className={row.errors.length?'is-invalid':row.duplicate?'is-duplicate':'is-valid'}>{row.errors[0]??(row.duplicate?(en?'Duplicate':'重复'):(en?'Ready':'可导入'))}</span></div>)}</div></div></>:null}
+    <DialogFooter><Button type="button" variant="outline" onClick={onClose}>{en?'Cancel':'取消'}</Button><Button type="button" disabled={busy||!preview||!mapping||mapping.titleColumn<0||preview.counts.valid===0} onClick={onImport}>{busy?(en?'Importing...':'导入中...'):(en?`Import ${preview?.counts.valid??0} tasks`:`导入 ${preview?.counts.valid??0} 个任务`)}</Button></DialogFooter>
+  </DialogContent></Dialog>
+}
+
 export default function App() {
   const [auth, setAuth] = useState<"loading" | "out" | "in">("loading"),
     [user, setUser] = useState("");
@@ -953,7 +966,11 @@ export default function App() {
     [error, setError] = useState(""),
     [query, setQuery] = useState(""),
     [kind, setKind] = useState<"ALL" | TaskKind>("ALL"),
-    [importDragging,setImportDragging]=useState(false);
+    [importDragging,setImportDragging]=useState(false),
+    [importFile,setImportFile]=useState<File|null>(null),
+    [importPreview,setImportPreview]=useState<TaskImportPreview|null>(null),
+    [importMapping,setImportMapping]=useState<TaskWorkbookMapping|null>(null),
+    [importBusy,setImportBusy]=useState(false);
   const [page, setPage] = useState<Page>("tasks"),
     [activeProject, setActiveProject] = useState(0),
     [view, setView] = useState<"board" | "list">("board"),
@@ -1059,7 +1076,7 @@ export default function App() {
       setError(reason instanceof Error ? reason.message : "保存失败");
     }
   };
-  const createTask = () => {
+  const createTask = (due = "") => {
     const column = columns[0];
     if (project && column)
       setEditing({
@@ -1072,24 +1089,31 @@ export default function App() {
         priority: "中",
         assignee: user,
         assigneeId: members.find((member) => member.name === user)?.id ?? "",
-        due: "",
+        due,
         tags: [],
         description: "",
         version: 1,
       });
   };
-  const importTasks = async (file:File) => {
-    const column=columns[0]
-    if(!project||!column)return
+  const closeTaskImport=()=>{setImportFile(null);setImportPreview(null);setImportMapping(null);setImportBusy(false);if(importRef.current)importRef.current.value=''}
+  const previewTaskImport=async(file:File,mapping?:TaskWorkbookMapping)=>{
+    if(!project)return
     if(!file.name.toLowerCase().endsWith('.xlsx')){setError(lang==='zh'?'仅支持 .xlsx 文件':'Only .xlsx files are supported');return}
-    try{
-      const result=await api.importTasks(workspaceId,file,project.id,column.id)
-      await reload()
-      toast.success(lang==='zh'?`已从“${result.sheetName}”导入 ${result.imported} 个任务`:`Imported ${result.imported} tasks from “${result.sheetName}”`)
-    }catch(reason){setError(reason instanceof Error?reason.message:'Excel 导入失败')}
-    finally{if(importRef.current)importRef.current.value=''}
+    setImportFile(file);setImportBusy(true);setError('')
+    try{const result=await api.previewTaskImport(workspaceId,file,project.id,mapping);setImportPreview(result);setImportMapping(result.mapping)}
+    catch(reason){closeTaskImport();setError(reason instanceof Error?reason.message:'Excel 预览失败')}
+    finally{setImportBusy(false)}
   }
-  const dropImport=(event:DragEvent)=>{event.preventDefault();setImportDragging(false);const file=event.dataTransfer.files[0];if(!file)return;if(!file.name.toLowerCase().endsWith('.xlsx')){setError(lang==='zh'?'仅支持 .xlsx 文件':'Only .xlsx files are supported');return}void importTasks(file)}
+  const changeImportMapping=(index:number,role:TaskColumnRole)=>setImportMapping(current=>{if(!current)return current;const next={...current,descriptionColumns:current.descriptionColumns.filter(value=>value!==index),kindColumn:current.kindColumn===index?null:current.kindColumn,priorityColumn:current.priorityColumn===index?null:current.priorityColumn,titleColumn:current.titleColumn===index?-1:current.titleColumn};if(role==='TITLE')next.titleColumn=index;if(role==='DESCRIPTION')next.descriptionColumns=[...next.descriptionColumns,index].sort((a,b)=>a-b);if(role==='KIND')next.kindColumn=index;if(role==='PRIORITY')next.priorityColumn=index;return next})
+  const confirmTaskImport=async()=>{
+    const column=columns[0]
+    if(!project||!column||!importFile||!importMapping)return
+    setImportBusy(true)
+    try{const result=await api.importTasks(workspaceId,importFile,project.id,column.id,importMapping);await reload();closeTaskImport();toast.success(lang==='zh'?`已导入 ${result.imported} 个任务，跳过 ${result.duplicateRows} 个重复项`:`Imported ${result.imported} tasks; skipped ${result.duplicateRows} duplicates`)}
+    catch(reason){setError(reason instanceof Error?reason.message:'Excel 导入失败')}
+    finally{setImportBusy(false)}
+  }
+  const dropImport=(event:DragEvent)=>{event.preventDefault();setImportDragging(false);const file=event.dataTransfer.files[0];if(file)void previewTaskImport(file)}
   const move = async (id: string, column: ColumnId) => {
     const task = tasks.find((item) => item.id === id);
     if (!task) return;
@@ -1266,12 +1290,12 @@ export default function App() {
                   <p>{t.tagline}</p>
                 </div>
                 <span className="title-actions">
-                  <input ref={importRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={event=>event.target.files?.[0]&&void importTasks(event.target.files[0])}/>
+                  <input ref={importRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={event=>event.target.files?.[0]&&void previewTaskImport(event.target.files[0])}/>
                   <Button variant="outline" className={`excel-drop ${importDragging?'is-dragging':''}`} onClick={()=>importRef.current?.click()} onDragEnter={event=>{event.preventDefault();setImportDragging(true)}} onDragOver={event=>event.preventDefault()} onDragLeave={()=>setImportDragging(false)} onDrop={dropImport}>
                     <FileUp data-icon="inline-start" />
                     {importDragging?(lang==='zh'?'松开导入':'Drop to import'):(lang==='zh'?'拖拽或选择 Excel':'Drop or choose Excel')}
                   </Button>
-                  <Button onClick={createTask}>
+                  <Button onClick={()=>createTask()}>
                     <Plus data-icon="inline-start" />
                     {t.newTask}
                   </Button>
@@ -1359,7 +1383,7 @@ export default function App() {
                           variant="ghost"
                           size="icon-xs"
                           aria-label={`${t.addTask} ${column.label}`}
-                          onClick={createTask}
+                          onClick={()=>createTask()}
                         >
                           <Plus />
                         </Button>
@@ -1388,7 +1412,7 @@ export default function App() {
                       <Button
                         variant="ghost"
                         className="add-inline"
-                        onClick={createTask}
+                        onClick={()=>createTask()}
                       >
                         <Plus data-icon="inline-start" />
                         {t.addTask}
@@ -1445,6 +1469,8 @@ export default function App() {
             projects={projects}
             onTasksChanged={reload}
             onTaskOpen={setEditing}
+            onTaskCreate={createTask}
+            onTaskDueChange={async (task,due)=>{try{await api.updateTask(workspaceId,{...task,due});await reload();toast.success(lang==='zh'?'截止日期已更新':'Due date updated')}catch(reason){setError(reason instanceof Error?reason.message:'更新截止日期失败')}}}
             workspaceRole={workspaces.find((item) => item.id === workspaceId)?.role ?? "VIEWER"}
             onWorkspaceRestored={async (id) => { const next=await api.workspaces();setWorkspaces(next);await loadWorkspace(id) }}
           />
@@ -1462,6 +1488,7 @@ export default function App() {
           t={t}
         />
       ) : null}
+      <TaskImportDialog file={importFile} preview={importPreview} mapping={importMapping} busy={importBusy} en={lang==='en'} onClose={closeTaskImport} onMappingChange={changeImportMapping} onRefresh={()=>importFile&&importMapping&&void previewTaskImport(importFile,importMapping)} onImport={()=>void confirmTaskImport()}/>
       <CreateDialog
         kind={creating}
         lang={lang}
