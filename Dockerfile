@@ -1,19 +1,22 @@
-FROM node:26.5.0-alpine AS build
+FROM node:26.5.0-alpine AS base
+RUN npm install --global pnpm@10.34.3
+
+FROM base AS build
 WORKDIR /app
-COPY package*.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
-RUN npm ci
 COPY . .
-RUN npm run build
+RUN pnpm install --frozen-lockfile
+RUN pnpm build
 
-FROM node:26.5.0-alpine AS runtime
+FROM base AS runtime
 WORKDIR /app
 ENV NODE_ENV=production PORT=8080
-COPY package*.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
-RUN npm ci --omit=dev && npm cache clean --force
+RUN pnpm install --frozen-lockfile --prod && pnpm store prune
 COPY --from=build /app/apps/api/dist apps/api/dist
 COPY --from=build /app/apps/web/dist public
 USER node

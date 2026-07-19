@@ -5,7 +5,7 @@ on:
     branches: [main]
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux]
     services:
       postgres:
         image: postgres:17-alpine
@@ -18,12 +18,14 @@ jobs:
       NODE_ENV: test
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10.34.3 }
       - uses: actions/setup-node@v4
-        with: { node-version: 24, cache: npm }
-      - run: npm ci
-      - run: npm test
-      - run: npm run db:migrate
-      - run: npm run test:integration -w @xian/api
-      - run: npm run build
-      - run: npm audit --audit-level=high
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm db:migrate
+      - run: pnpm --filter @xian/api test:integration
+      - run: pnpm build
+      - run: pnpm --registry=https://registry.npmjs.org audit --audit-level=high
       - run: docker build -t xian:${{ github.sha }} .
