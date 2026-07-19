@@ -58,6 +58,7 @@ import {
 } from "./components/ui/avatar";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
+import { Checkbox } from "./components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -165,6 +166,9 @@ const copy = {
     taskDetails: "任务详情",
     cancel: "取消",
     save: "保存任务",
+    deleteTask: "删除任务",
+    deleteTaskTitle: "确认删除任务？",
+    deleteTaskDescription: "任务将被软删除，并从当前项目中隐藏。此操作不会立即擦除数据库记录。",
     renameProject: "重命名项目",
     deleteProject: "删除项目",
     deleteTitle: "确认删除项目？",
@@ -222,6 +226,9 @@ const copy = {
     taskDetails: "Task details",
     cancel: "Cancel",
     save: "Save task",
+    deleteTask: "Delete task",
+    deleteTaskTitle: "Delete this task?",
+    deleteTaskDescription: "The task will be soft deleted and hidden from the current project. Its database record is retained.",
     renameProject: "Rename project",
     deleteProject: "Delete project",
     deleteTitle: "Delete this project?",
@@ -530,7 +537,8 @@ function TaskCard({
   const [dragging, setDragging] = useState(false);
   return (
     <Button
-      render={<button type="button" className={`task-card ${dragging ? "dragging" : ""}`} />}
+      type="button"
+      className={`task-card ${dragging ? "dragging" : ""}`}
       variant="ghost"
       draggable
       onDragStart={(event) => {
@@ -586,6 +594,7 @@ function TaskDialog({
   code,
   onClose,
   onSave,
+  onDelete,
   t,
 }: {
   task: Task | null;
@@ -595,11 +604,13 @@ function TaskDialog({
   code: string;
   onClose: () => void;
   onSave: (task: Task) => Promise<void>;
+  onDelete: (task: Task) => Promise<void>;
   t: Copy;
 }) {
   const [draft, setDraft] = useState<Task | null>(task);
+  const [confirmingDelete,setConfirmingDelete]=useState(false),[deletingTask,setDeletingTask]=useState(false)
   const [githubReferences,setGithubReferences]=useState<GitHubReference[]|null>(null),[githubLinks,setGithubLinks]=useState<GitHubReference[]>([]),[initialGithubLinks,setInitialGithubLinks]=useState<GitHubReference[]>([])
-  useEffect(() => setDraft(task), [task]);
+  useEffect(() => {setDraft(task);setConfirmingDelete(false);setDeletingTask(false)}, [task]);
   useEffect(()=>{if(!task||task.id==='new'){setGithubReferences(null);setGithubLinks([]);setInitialGithubLinks([]);return}let active=true;Promise.all([api.githubReferences(workspaceId),api.taskGitHubLinks(workspaceId,task.id)]).then(([references,links])=>{if(active){setGithubReferences(references.projectId===task.projectId?references.items:null);setGithubLinks(links);setInitialGithubLinks(links)}}).catch(()=>{if(active){setGithubReferences(null);setGithubLinks([]);setInitialGithubLinks([])}});return()=>{active=false}},[task?.id,workspaceId])
   if (!draft) return null;
   return (
@@ -725,9 +736,10 @@ function TaskDialog({
                 onChange={(event)=>setDraft({...draft,description:event.target.value})}
               />
             </Field>
-            {githubReferences?<Field><FieldLabel>{t.taskDetails==='任务详情'?'关联 GitHub':'GitHub links'}</FieldLabel><div className="github-reference-list">{githubReferences.length?githubReferences.map(reference=>{const checked=githubLinks.some(link=>link.kind===reference.kind&&link.number===reference.number);return <label className="github-reference" key={`${reference.kind}:${reference.number}`}><input type="checkbox" checked={checked} onChange={()=>setGithubLinks(current=>checked?current.filter(link=>link.kind!==reference.kind||link.number!==reference.number):[...current,reference])}/>{reference.kind==='PR'?<GitPullRequest/>:<CircleDot/>}<span><strong>{reference.kind} #{reference.number}</strong><small>{reference.title}</small></span><a href={reference.url} target="_blank" rel="noreferrer" aria-label={`Open ${reference.kind} ${reference.number}`}><ExternalLink/></a></label>}):<p className="github-reference-empty">{t.taskDetails==='任务详情'?'仓库中暂无 Issue 或 PR':'No Issues or pull requests found'}</p>}</div></Field>:null}
+            {githubReferences?<Field><FieldLabel>{t.taskDetails==='任务详情'?'关联 GitHub':'GitHub links'}</FieldLabel><div className="github-reference-list">{githubReferences.length?githubReferences.map(reference=>{const checked=githubLinks.some(link=>link.kind===reference.kind&&link.number===reference.number),id=`github-reference-${reference.kind}-${reference.number}`;return <div className="github-reference" key={`${reference.kind}:${reference.number}`}><Checkbox id={id} checked={checked} onCheckedChange={()=>setGithubLinks(current=>checked?current.filter(link=>link.kind!==reference.kind||link.number!==reference.number):[...current,reference])}/>{reference.kind==='PR'?<GitPullRequest/>:<CircleDot/>}<label htmlFor={id}><strong>{reference.kind} #{reference.number}</strong><small>{reference.title}</small></label><a href={reference.url} target="_blank" rel="noreferrer" aria-label={`Open ${reference.kind} ${reference.number}`}><ExternalLink/></a></div>}):<p className="github-reference-empty">{t.taskDetails==='任务详情'?'仓库中暂无 Issue 或 PR':'No Issues or pull requests found'}</p>}</div></Field>:null}
           </FieldGroup></div>
           <SheetFooter className="task-sheet-footer">
+            {draft.id!=="new"?<Button type="button" variant="destructive" className="task-delete-button" onClick={()=>setConfirmingDelete(true)}><Trash2 data-icon="inline-start"/>{t.deleteTask}</Button>:null}
             <Button type="button" variant="outline" onClick={onClose}>
               {t.cancel}
             </Button>
@@ -737,6 +749,7 @@ function TaskDialog({
             </Button>
           </SheetFooter>
         </form>
+        <AlertDialog open={confirmingDelete} onOpenChange={open=>!deletingTask&&setConfirmingDelete(open)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t.deleteTaskTitle}</AlertDialogTitle><AlertDialogDescription><strong>{draft.title}</strong><br/>{t.deleteTaskDescription}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deletingTask}>{t.cancel}</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={deletingTask} onClick={async()=>{setDeletingTask(true);try{await onDelete(draft);setConfirmingDelete(false)}catch(reason){toast.error(reason instanceof Error?reason.message:(t.taskDetails==='任务详情'?'删除失败':'Delete failed'))}finally{setDeletingTask(false)}}}>{deletingTask?(t.taskDetails==='任务详情'?'删除中…':'Deleting…'):t.deleteTask}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
       </SheetContent>
     </Sheet>
   );
@@ -948,7 +961,7 @@ function TaskImportDialog({file,preview,mapping,busy,en,onClose,onMappingChange,
   return <Dialog open={Boolean(file)} onOpenChange={open=>!open&&onClose()}><DialogContent className="task-import-dialog"><DialogHeader><DialogTitle>{en?'Review Excel import':'确认 Excel 导入'}</DialogTitle><DialogDescription>{file?.name}{preview?` · ${preview.sheetName}`:''}</DialogDescription></DialogHeader>
     {busy&&!preview?<div className="import-loading">{en?'Analyzing workbook...':'正在分析工作簿...'}</div>:null}
     {preview&&mapping?<><div className="import-summary"><span><strong>{preview.counts.valid}</strong>{en?'Ready':'可导入'}</span><span><strong>{preview.counts.invalid}</strong>{en?'Invalid':'无效'}</span><span><strong>{preview.counts.duplicates}</strong>{en?'Duplicates':'重复'}</span><span><strong>{preview.counts.ignored}</strong>{en?'Ignored':'忽略'}</span></div>
-      <div className="import-mapping"><div className="import-section-head"><strong>{en?'Column mapping':'字段映射'}</strong><Button type="button" variant="outline" size="sm" disabled={busy||mapping.titleColumn<0} onClick={onRefresh}>{busy?(en?'Analyzing...':'分析中...'):(en?'Refresh preview':'重新分析')}</Button></div><div className="import-mapping-grid">{preview.columns.map(column=><label key={column.index}><span>{column.header}</span><select value={mappedRole(mapping,column.index)} onChange={event=>onMappingChange(column.index,event.target.value as TaskColumnRole)}>{(Object.keys(importRoleLabels) as TaskColumnRole[]).map(role=><option value={role} key={role}>{importRoleLabels[role][en?'en':'zh']}</option>)}</select></label>)}</div></div>
+      <div className="import-mapping"><div className="import-section-head"><strong>{en?'Column mapping':'字段映射'}</strong><Button type="button" variant="outline" size="sm" disabled={busy||mapping.titleColumn<0} onClick={onRefresh}>{busy?(en?'Analyzing...':'分析中...'):(en?'Refresh preview':'重新分析')}</Button></div><div className="import-mapping-grid">{preview.columns.map(column=><div className="import-mapping-field" key={column.index}><span>{column.header}</span><ChoiceSelect label={`${column.header} ${en?'mapping':'字段映射'}`} value={mappedRole(mapping,column.index)} options={(Object.keys(importRoleLabels) as TaskColumnRole[]).map(role=>({value:role,label:importRoleLabels[role][en?'en':'zh']}))} onChange={role=>onMappingChange(column.index,role)} className="import-mapping-select"/></div>)}</div></div>
       <div className="import-rows"><div className="import-section-head"><strong>{en?'Row report':'行校验结果'}</strong><small>{en?`${preview.counts.total} data rows`:`${preview.counts.total} 行数据`}</small></div><div className="import-table"><div className="import-table-head"><span>{en?'Row':'行'}</span><span>{en?'Title':'标题'}</span><span>{en?'Type':'类型'}</span><span>{en?'Result':'结果'}</span></div>{preview.rows.map(row=><div className="import-table-row" key={row.sourceRow}><span>{row.sourceRow}</span><strong>{row.title||'—'}</strong><span>{row.kind}</span><span className={row.errors.length?'is-invalid':row.duplicate?'is-duplicate':'is-valid'}>{row.errors[0]??(row.duplicate?(en?'Duplicate':'重复'):(en?'Ready':'可导入'))}</span></div>)}</div></div></>:null}
     <DialogFooter><Button type="button" variant="outline" onClick={onClose}>{en?'Cancel':'取消'}</Button><Button type="button" disabled={busy||!preview||!mapping||mapping.titleColumn<0||preview.counts.valid===0} onClick={onImport}>{busy?(en?'Importing...':'导入中...'):(en?`Import ${preview?.counts.valid??0} tasks`:`导入 ${preview?.counts.valid??0} 个任务`)}</Button></DialogFooter>
   </DialogContent></Dialog>
@@ -1485,6 +1498,7 @@ export default function App() {
           code={project.code}
           onClose={() => setEditing(null)}
           onSave={updateTask}
+          onDelete={async task=>{await api.deleteTask(workspaceId,task.id);setEditing(null);await reload();toast.success(lang==='zh'?'任务已删除':'Task deleted')}}
           t={t}
         />
       ) : null}
