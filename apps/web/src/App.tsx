@@ -1076,7 +1076,7 @@ export default function App() {
       setError(reason instanceof Error ? reason.message : "保存失败");
     }
   };
-  const createTask = () => {
+  const createTask = (due = "") => {
     const column = columns[0];
     if (project && column)
       setEditing({
@@ -1089,7 +1089,7 @@ export default function App() {
         priority: "中",
         assignee: user,
         assigneeId: members.find((member) => member.name === user)?.id ?? "",
-        due: "",
+        due,
         tags: [],
         description: "",
         version: 1,
@@ -1295,7 +1295,7 @@ export default function App() {
                     <FileUp data-icon="inline-start" />
                     {importDragging?(lang==='zh'?'松开导入':'Drop to import'):(lang==='zh'?'拖拽或选择 Excel':'Drop or choose Excel')}
                   </Button>
-                  <Button onClick={createTask}>
+                  <Button onClick={()=>createTask()}>
                     <Plus data-icon="inline-start" />
                     {t.newTask}
                   </Button>
@@ -1383,7 +1383,7 @@ export default function App() {
                           variant="ghost"
                           size="icon-xs"
                           aria-label={`${t.addTask} ${column.label}`}
-                          onClick={createTask}
+                          onClick={()=>createTask()}
                         >
                           <Plus />
                         </Button>
@@ -1412,7 +1412,7 @@ export default function App() {
                       <Button
                         variant="ghost"
                         className="add-inline"
-                        onClick={createTask}
+                        onClick={()=>createTask()}
                       >
                         <Plus data-icon="inline-start" />
                         {t.addTask}
@@ -1469,6 +1469,8 @@ export default function App() {
             projects={projects}
             onTasksChanged={reload}
             onTaskOpen={setEditing}
+            onTaskCreate={createTask}
+            onTaskDueChange={async (task,due)=>{try{await api.updateTask(workspaceId,{...task,due});await reload();toast.success(lang==='zh'?'截止日期已更新':'Due date updated')}catch(reason){setError(reason instanceof Error?reason.message:'更新截止日期失败')}}}
             workspaceRole={workspaces.find((item) => item.id === workspaceId)?.role ?? "VIEWER"}
             onWorkspaceRestored={async (id) => { const next=await api.workspaces();setWorkspaces(next);await loadWorkspace(id) }}
           />
