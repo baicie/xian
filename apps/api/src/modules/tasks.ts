@@ -2,7 +2,7 @@ import { BadRequestException, Body, ConflictException, Controller, Delete, Get, 
 import { FileInterceptor } from '@nestjs/platform-express'
 import { z } from 'zod'
 import { DatabaseService } from '../database/database.service.js'
-import { commentSchema, taskPatchSchema, taskSchema } from '../common/contracts.js'
+import { commentSchema, taskBulkSchema, taskPatchSchema, taskSchema } from '../common/contracts.js'
 import { AppRequest, parse } from '../common/http.js'
 import { WorkspaceService } from './workspaces.js'
 import { analyzeTaskWorkbook, normalizeTaskTitle, type TaskWorkbookMapping } from './task-xlsx.js'
@@ -90,6 +90,38 @@ export class TaskService {
       return task
     })
   }
+  async bulkUpdate(workspaceId:string,userId:string,input:ReturnType<typeof taskBulkSchema.parse>) {
+    await this.workspaces.role(workspaceId,userId,input.action.type==='DELETE'?'task.delete':'task.update')
+    return this.db.client.begin(async sql=>{
+      if(input.action.type==='ASSIGN'){
+        for(const assigneeId of input.action.assigneeIds){
+          const [member]=await sql`SELECT 1 FROM memberships WHERE workspace_id=${workspaceId} AND user_id=${assigneeId} AND disabled_at IS NULL`
+          if(!member)throw new BadRequestException({code:'ASSIGNEE_NOT_MEMBER',message:'负责人不是当前工作区的有效成员'})
+        }
+      }
+      let updated=0
+      for(const taskId of input.taskIds){
+        const [task]=await sql<{projectId:string}[]>`SELECT project_id AS "projectId" FROM tasks WHERE id=${taskId} AND workspace_id=${workspaceId} AND deleted_at IS NULL`
+        if(!task)throw new NotFoundException({code:'TASK_NOT_FOUND',message:'批量操作中包含不存在的任务'})
+        if(input.action.type==='ASSIGN'){
+          await sql`DELETE FROM task_assignees WHERE task_id=${taskId} AND workspace_id=${workspaceId}`
+          for(const assigneeId of input.action.assigneeIds)await sql`INSERT INTO task_assignees(workspace_id,task_id,user_id) VALUES(${workspaceId},${taskId},${assigneeId})`
+          await sql`UPDATE tasks SET version=version+1,updated_at=now() WHERE id=${taskId} AND workspace_id=${workspaceId}`
+        }else if(input.action.type==='MOVE'){
+          const [column]=await sql`SELECT 1 FROM board_columns WHERE id=${input.action.columnId} AND project_id=${task.projectId} AND workspace_id=${workspaceId}`
+          if(!column)throw new NotFoundException({code:'COLUMN_NOT_FOUND',message:'目标状态不属于所选任务的项目'})
+          await sql`UPDATE tasks SET column_id=${input.action.columnId},version=version+1,updated_at=now() WHERE id=${taskId} AND workspace_id=${workspaceId}`
+        }else if(input.action.type==='PRIORITY'){
+          await sql`UPDATE tasks SET priority=${input.action.priority},version=version+1,updated_at=now() WHERE id=${taskId} AND workspace_id=${workspaceId}`
+        }else{
+          await sql`UPDATE tasks SET deleted_at=now(),deleted_by=${userId},version=version+1,updated_at=now() WHERE id=${taskId} AND workspace_id=${workspaceId}`
+        }
+        await sql`INSERT INTO activities(workspace_id,task_id,actor_id,action,data) VALUES(${workspaceId},${taskId},${userId},${input.action.type==='DELETE'?'task.bulk_deleted':'task.bulk_updated'},${JSON.stringify(input.action)}::jsonb)`
+        updated++
+      }
+      return{updated}
+    })
+  }
 }
 
 @Controller('workspaces/:workspaceId/tasks')
@@ -109,6 +141,7 @@ export class TaskController {
     const input=parse(importFieldsSchema.extend({columnId:z.string().uuid()}),body)
     return this.tasks.importXlsx(workspaceId,req.user!.id,input.projectId,input.columnId,file.buffer,parseWorkbookMapping(input.mapping))
   }
+  @Patch('bulk') bulkUpdate(@Req() req:AppRequest,@Param('workspaceId') workspaceId:string,@Body() body:unknown){return this.tasks.bulkUpdate(workspaceId,req.user!.id,parse(taskBulkSchema,body))}
   @Patch(':id') update(@Req() req:AppRequest,@Param('workspaceId') workspaceId:string,@Param('id') id:string,@Body() body:unknown){return this.tasks.update(workspaceId,req.user!.id,id,parse(taskPatchSchema,body))}
   @Delete(':id') async remove(@Req() req:AppRequest,@Param('workspaceId') workspaceId:string,@Param('id') id:string){await this.workspaces.role(workspaceId,req.user!.id,'task.delete');await this.db.client`UPDATE tasks SET deleted_at=now(),deleted_by=${req.user!.id} WHERE id=${id} AND workspace_id=${workspaceId}`;return{ok:true}}
   @Post(':id/archive') async archive(@Req() req:AppRequest,@Param('workspaceId') workspaceId:string,@Param('id') id:string){await this.workspaces.role(workspaceId,req.user!.id,'task.update');await this.db.client`UPDATE tasks SET archived_at=now() WHERE id=${id} AND workspace_id=${workspaceId}`;return{ok:true}}

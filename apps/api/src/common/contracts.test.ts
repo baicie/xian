@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { documentCreateSchema, documentUpdateSchema, planCreateSchema, taskPatchSchema, taskSchema } from './contracts.js'
+import { documentCreateSchema, documentUpdateSchema, planCreateSchema, taskBulkSchema, taskPatchSchema, taskSchema } from './contracts.js'
 
 describe('task type contract',()=>{
   const base={projectId:'11111111-1111-4111-8111-111111111111',columnId:'22222222-2222-4222-8222-222222222222',title:'修复登录失败'}
@@ -8,6 +8,7 @@ describe('task type contract',()=>{
     expect(taskSchema.parse({...base,kind:'BUG'}).kind).toBe('BUG')
   })
   it('does not inject create defaults into partial updates',()=>expect(taskPatchSchema.parse({version:1})).toEqual({version:1}))
+  it('accepts one bulk action and rejects duplicate task ids',()=>{const id='33333333-3333-4333-8333-333333333333';expect(taskBulkSchema.parse({taskIds:[id],action:{type:'PRIORITY',priority:'HIGH'}}).action.type).toBe('PRIORITY');expect(taskBulkSchema.safeParse({taskIds:[id,id],action:{type:'DELETE'}}).success).toBe(false)})
 })
 
 describe('plan contract', () => {

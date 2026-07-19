@@ -1,6 +1,7 @@
 import { DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
+  ArrowRight,
   CalendarDays,
   Check,
   ChevronDown,
@@ -12,6 +13,7 @@ import {
   ExternalLink,
   GitPullRequest,
   Filter,
+  Flag,
   LayoutDashboard,
   List,
   LogOut,
@@ -24,6 +26,7 @@ import {
   Sparkles,
   Sun,
   Trash2,
+  UserRoundCheck,
   Users,
   X,
 } from "lucide-react";
@@ -169,6 +172,17 @@ const copy = {
     deleteTask: "删除任务",
     deleteTaskTitle: "确认删除任务？",
     deleteTaskDescription: "任务将被软删除，并从当前项目中隐藏。此操作不会立即擦除数据库记录。",
+    selectedTasks: "个任务已选择",
+    selectAllTasks: "选择当前结果中的全部任务",
+    clearSelection: "清除选择",
+    assignToMe: "指派给我",
+    changeAssignee: "更改负责人",
+    unassigned: "取消指派",
+    changeStatus: "移动状态",
+    changePriority: "修改优先级",
+    bulkDelete: "批量删除",
+    bulkDeleteTitle: "删除所选任务？",
+    bulkDeleteDescription: "所选任务将被软删除，并从当前项目中隐藏。",
     renameProject: "重命名项目",
     deleteProject: "删除项目",
     deleteTitle: "确认删除项目？",
@@ -229,6 +243,17 @@ const copy = {
     deleteTask: "Delete task",
     deleteTaskTitle: "Delete this task?",
     deleteTaskDescription: "The task will be soft deleted and hidden from the current project. Its database record is retained.",
+    selectedTasks: "tasks selected",
+    selectAllTasks: "Select all tasks in the current results",
+    clearSelection: "Clear selection",
+    assignToMe: "Assign to me",
+    changeAssignee: "Change assignee",
+    unassigned: "Unassign",
+    changeStatus: "Move status",
+    changePriority: "Change priority",
+    bulkDelete: "Delete selected",
+    bulkDeleteTitle: "Delete selected tasks?",
+    bulkDeleteDescription: "The selected tasks will be soft deleted and hidden from this project.",
     renameProject: "Rename project",
     deleteProject: "Delete project",
     deleteTitle: "Delete this project?",
@@ -969,7 +994,8 @@ function TaskImportDialog({file,preview,mapping,busy,en,onClose,onMappingChange,
 
 export default function App() {
   const [auth, setAuth] = useState<"loading" | "out" | "in">("loading"),
-    [user, setUser] = useState("");
+    [user, setUser] = useState(""),
+    [userId, setUserId] = useState("");
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]),
     [workspaceId, setWorkspaceId] = useState(""),
     [projects, setProjects] = useState<Project[]>([]),
@@ -983,7 +1009,10 @@ export default function App() {
     [importFile,setImportFile]=useState<File|null>(null),
     [importPreview,setImportPreview]=useState<TaskImportPreview|null>(null),
     [importMapping,setImportMapping]=useState<TaskWorkbookMapping|null>(null),
-    [importBusy,setImportBusy]=useState(false);
+    [importBusy,setImportBusy]=useState(false),
+    [selectedTaskIds,setSelectedTaskIds]=useState<string[]>([]),
+    [bulkBusy,setBulkBusy]=useState(false),
+    [confirmingBulkDelete,setConfirmingBulkDelete]=useState(false);
   const [page, setPage] = useState<Page>("tasks"),
     [activeProject, setActiveProject] = useState(0),
     [view, setView] = useState<"board" | "list">("board"),
@@ -1017,6 +1046,7 @@ export default function App() {
     try {
       const me = await api.me();
       setUser(me.user.name);
+      setUserId(me.user.id);
       const next = await api.workspaces();
       setWorkspaces(next);
       if (!next[0]) throw new Error("请先创建工作区");
@@ -1075,6 +1105,8 @@ export default function App() {
       [tasks, query, kind],
     ),
     project = projects[activeProject];
+  const selectedTaskCount=selectedTaskIds.length,allShownSelected=shownTasks.length>0&&shownTasks.every(task=>selectedTaskIds.includes(task.id));
+  useEffect(()=>{setSelectedTaskIds([]);setConfirmingBulkDelete(false)},[workspaceId,project?.id,view,query,kind])
   const reload = async () => {
     if (project) setTasks(await api.tasks(workspaceId, project.id));
   };
@@ -1089,6 +1121,15 @@ export default function App() {
       setError(reason instanceof Error ? reason.message : "保存失败");
     }
   };
+  const toggleTaskSelection=(taskId:string,checked:boolean)=>setSelectedTaskIds(current=>checked?[...new Set([...current,taskId])]:current.filter(id=>id!==taskId))
+  const toggleAllShown=(checked:boolean)=>setSelectedTaskIds(current=>checked?[...new Set([...current,...shownTasks.map(task=>task.id)])]:current.filter(id=>!shownTasks.some(task=>task.id===id)))
+  const applyBulk=async(action:Parameters<typeof api.bulkUpdateTasks>[2],success:string)=>{
+    if(!selectedTaskIds.length)return
+    setBulkBusy(true);setError('')
+    try{const result=await api.bulkUpdateTasks(workspaceId,selectedTaskIds,action);await reload();setSelectedTaskIds([]);setConfirmingBulkDelete(false);toast.success(lang==='zh'?`已更新 ${result.updated} 个任务`:`${result.updated} tasks ${success}`)}
+    catch(reason){setError(reason instanceof Error?reason.message:(lang==='zh'?'批量操作失败':'Bulk action failed'))}
+    finally{setBulkBusy(false)}
+  }
   const createTask = (due = "") => {
     const column = columns[0];
     if (project && column)
@@ -1194,6 +1235,7 @@ export default function App() {
       await api.logout();
     } finally {
       setAuth("out");
+      setUserId("");
       setTasks([]);
       setProjects([]);
       setWorkspaces([]);
@@ -1355,6 +1397,15 @@ export default function App() {
                 </span>
               </div>
             </section>
+            {view==="list"&&selectedTaskCount>0?<section className="bulk-toolbar" aria-label={lang==='zh'?'批量操作':'Bulk actions'}>
+              <strong>{selectedTaskCount} {t.selectedTasks}</strong>
+              <Button size="sm" disabled={bulkBusy||!userId} onClick={()=>void applyBulk({type:'ASSIGN',assigneeIds:[userId]},'assigned')}><UserRoundCheck data-icon="inline-start"/>{t.assignToMe}</Button>
+              <DropdownMenu><DropdownMenuTrigger render={<Button type="button" size="sm" variant="outline" disabled={bulkBusy}/>}>{t.changeAssignee}<ChevronDown data-icon="inline-end"/></DropdownMenuTrigger><DropdownMenuContent><DropdownMenuGroup><DropdownMenuLabel>{t.assignee}</DropdownMenuLabel><DropdownMenuItem onClick={()=>void applyBulk({type:'ASSIGN',assigneeIds:[]},'unassigned')}>{t.unassigned}</DropdownMenuItem><DropdownMenuSeparator/>{members.filter(member=>!member.disabledAt).map(member=><DropdownMenuItem key={member.id} onClick={()=>void applyBulk({type:'ASSIGN',assigneeIds:[member.id]},'assigned')}>{member.name}</DropdownMenuItem>)}</DropdownMenuGroup></DropdownMenuContent></DropdownMenu>
+              <DropdownMenu><DropdownMenuTrigger render={<Button type="button" size="sm" variant="outline" disabled={bulkBusy}/>}>{t.changeStatus}<ChevronDown data-icon="inline-end"/></DropdownMenuTrigger><DropdownMenuContent><DropdownMenuGroup><DropdownMenuLabel>{t.status}</DropdownMenuLabel>{columns.map(column=><DropdownMenuItem key={column.id} onClick={()=>void applyBulk({type:'MOVE',columnId:column.id},'moved')}><ArrowRight/>{column.label}</DropdownMenuItem>)}</DropdownMenuGroup></DropdownMenuContent></DropdownMenu>
+              <DropdownMenu><DropdownMenuTrigger render={<Button type="button" size="sm" variant="outline" disabled={bulkBusy}/>}>{t.changePriority}<ChevronDown data-icon="inline-end"/></DropdownMenuTrigger><DropdownMenuContent><DropdownMenuGroup><DropdownMenuLabel>{t.priority}</DropdownMenuLabel>{([['HIGH',t.high],['MEDIUM',t.medium],['LOW',t.low]] as const).map(([priority,label])=><DropdownMenuItem key={priority} onClick={()=>void applyBulk({type:'PRIORITY',priority},'updated')}><Flag/>{label}</DropdownMenuItem>)}</DropdownMenuGroup></DropdownMenuContent></DropdownMenu>
+              <Button type="button" size="sm" variant="destructive" disabled={bulkBusy} onClick={()=>setConfirmingBulkDelete(true)}><Trash2 data-icon="inline-start"/>{t.bulkDelete}</Button>
+              <Button type="button" size="icon-sm" variant="ghost" aria-label={t.clearSelection} disabled={bulkBusy} onClick={()=>setSelectedTaskIds([])}><X/></Button>
+            </section>:null}
             {query && shownTasks.length === 0 ? (
               <Empty className="search-empty">
                 <EmptyHeader>
@@ -1437,35 +1488,22 @@ export default function App() {
             ) : (
               <section className="list-view">
                 <div className="list-head">
+                  <Checkbox aria-label={t.selectAllTasks} checked={allShownSelected} onCheckedChange={checked=>toggleAllShown(Boolean(checked))}/>
                   <span>{t.task}</span>
                   <span>{t.status}</span>
                   <span>{t.assignee}</span>
                   <span>{t.due}</span>
                 </div>
                 {shownTasks.map((task) => (
-                  <Button
-                    variant="ghost"
-                    key={task.id}
-                    onClick={() => setEditing(task)}
-                  >
-                    <span>
-                      <b>
-                        {project.code}-{task.number}
-                      </b>
-                      {task.title}
-                    </span>
-                    <span>
-                      {
-                        columns.find((column) => column.id === task.column)
-                          ?.label
-                      }
-                    </span>
-                    <span>
-                      <UserAvatar name={task.assignee} small />
-                      {task.assignee}
-                    </span>
-                    <span>{task.due}</span>
-                  </Button>
+                  <div className="list-row" data-selected={selectedTaskIds.includes(task.id)||undefined} key={task.id}>
+                    <Checkbox aria-label={`${lang==='zh'?'选择':'Select'} ${project.code}-${task.number}`} checked={selectedTaskIds.includes(task.id)} onCheckedChange={checked=>toggleTaskSelection(task.id,Boolean(checked))}/>
+                    <Button variant="ghost" onClick={() => setEditing(task)}>
+                      <span><b>{project.code}-{task.number}</b>{task.title}</span>
+                      <span>{columns.find((column) => column.id === task.column)?.label}</span>
+                      <span><UserAvatar name={task.assignee} small />{task.assignee}</span>
+                      <span>{task.due}</span>
+                    </Button>
+                  </div>
                 ))}
               </section>
             )}
@@ -1517,6 +1555,12 @@ export default function App() {
         onClose={() => setRenaming(null)}
         onRename={renameProject}
       />
+      <AlertDialog open={confirmingBulkDelete} onOpenChange={open=>!bulkBusy&&setConfirmingBulkDelete(open)}>
+        <AlertDialogContent>
+          <AlertDialogHeader><AlertDialogTitle>{t.bulkDeleteTitle}</AlertDialogTitle><AlertDialogDescription><strong>{selectedTaskCount} {t.selectedTasks}</strong><br/>{t.bulkDeleteDescription}</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel disabled={bulkBusy}>{t.cancel}</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={bulkBusy} onClick={()=>void applyBulk({type:'DELETE'},'deleted')}>{bulkBusy?(lang==='zh'?'删除中…':'Deleting…'):t.bulkDelete}</AlertDialogAction></AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog
         open={Boolean(deleting)}
         onOpenChange={(open) => !open && setDeleting(null)}
