@@ -7,8 +7,10 @@ import {
   ChevronRight,
   CheckCircle2,
   CircleAlert,
+  Database,
   FolderKanban,
   GitCommitHorizontal,
+  Plug,
   Settings,
   UserPlus,
   Users,
@@ -51,6 +53,7 @@ import {
   FieldLabel,
 } from "./components/ui/field";
 import { Input } from "./components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import McpTokensPanel from "./features/settings/McpTokensPanel";
 import TransferPanel from "./features/settings/TransferPanel";
 import GitHubPanel from "./features/settings/GitHubPanel";
@@ -230,46 +233,31 @@ export default function WorkspacePage({
         />
       </>
     );
+  const canAdminister = workspaceRole === "OWNER" || workspaceRole === "ADMIN";
   return (
     <PageShell
       title={en ? "Settings" : "设置"}
       subtitle={en ? "Workspace preferences and account" : "工作区偏好与账户"}
     >
-      <div className="settings-list">
-        <Card size="sm">
-          <CardContent>
-            <Settings />
-            <span>
-              <strong>{en ? "Current account" : "当前账户"}</strong>
-              <small>{user}</small>
-            </span>
-          </CardContent>
-        </Card>
-        <Card size="sm">
-          <CardContent>
-            <FolderKanban />
-            <span>
-              <strong>{en ? "Projects" : "项目数量"}</strong>
-              <small>
-                {projectCount} {en ? "projects" : "个项目"}
-              </small>
-            </span>
-          </CardContent>
-        </Card>
-        <Card size="sm">
-          <CardContent>
-            <GitCommitHorizontal />
-            <span>
-              <strong>{en ? "Build version" : "构建版本"}</strong>
-              <small title={__APP_COMMIT__}>{__APP_COMMIT__==='unknown'?(en?'Unknown':'未知'):__APP_COMMIT__.slice(0,12)}</small>
-            </span>
-          </CardContent>
-        </Card>
-      </div>
-      {workspaceRole === "OWNER" || workspaceRole === "ADMIN" ? <McpTokensPanel workspaceId={workspaceId} en={en} /> : null}
-      {workspaceRole === "OWNER" || workspaceRole === "ADMIN" ? <GitHubPanel workspaceId={workspaceId} projects={projects} en={en} onTasksChanged={onTasksChanged} /> : null}
-      {workspaceRole === "OWNER" || workspaceRole === "ADMIN" ? <AssetsPanel workspaceId={workspaceId} en={en} /> : null}
-      <TransferPanel workspaceId={workspaceId} en={en} onRestored={onWorkspaceRestored} />
+      <Tabs defaultValue="overview" className="settings-tabs">
+        <TabsList variant="line" aria-label={en ? "Settings sections" : "设置分类"}>
+          <TabsTrigger value="overview"><Settings />{en ? "Overview" : "概览"}</TabsTrigger>
+          {canAdminister ? <TabsTrigger value="integrations"><Plug />{en ? "Integrations" : "集成"}</TabsTrigger> : null}
+          <TabsTrigger value="data"><Database />{en ? "Data" : "数据"}</TabsTrigger>
+        </TabsList>
+        <TabsContent value="overview">
+          <div className="settings-list">
+            <Card size="sm"><CardContent><Settings /><span><strong>{en ? "Current account" : "当前账户"}</strong><small>{user}</small></span></CardContent></Card>
+            <Card size="sm"><CardContent><FolderKanban /><span><strong>{en ? "Projects" : "项目数量"}</strong><small>{projectCount} {en ? "projects" : "个项目"}</small></span></CardContent></Card>
+            <Card size="sm"><CardContent><GitCommitHorizontal /><span><strong>{en ? "Build version" : "构建版本"}</strong><small title={__APP_COMMIT__}>{__APP_COMMIT__==='unknown'?(en?'Unknown':'未知'):__APP_COMMIT__.slice(0,12)}</small></span></CardContent></Card>
+          </div>
+        </TabsContent>
+        {canAdminister ? <TabsContent value="integrations" className="settings-tab-panels"><McpTokensPanel workspaceId={workspaceId} en={en} /><GitHubPanel workspaceId={workspaceId} projects={projects} en={en} onTasksChanged={onTasksChanged} /></TabsContent> : null}
+        <TabsContent value="data" className="settings-tab-panels">
+          {canAdminister ? <AssetsPanel workspaceId={workspaceId} en={en} /> : null}
+          <TransferPanel workspaceId={workspaceId} en={en} onRestored={onWorkspaceRestored} />
+        </TabsContent>
+      </Tabs>
     </PageShell>
   );
 }

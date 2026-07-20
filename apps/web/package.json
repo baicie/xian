@@ -23,6 +23,8 @@
     "platejs": "^53.2.4",
     "react": "latest",
     "react-dom": "latest",
+    "react-resizable-panels": "^4.12.2",
+    "react-router-dom": "^7.18.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.3",
@@ -30,10 +32,10 @@
     "vite": "latest"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@types/node": "^26.1.1",
     "@types/react": "latest",
     "@types/react-dom": "latest",
-    "@playwright/test": "^1.61.1",
     "typescript": "latest",
     "vitest": "latest"
   }

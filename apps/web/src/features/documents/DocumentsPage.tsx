@@ -1,4 +1,4 @@
-import { FormEvent, MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react'
+import { FormEvent, lazy, MouseEvent as ReactMouseEvent, Suspense, useEffect, useRef, useState } from 'react'
 import { BookOpen, ChevronDown, ChevronRight, Clock3, Copy, File, FilePlus2, Folder, FolderOpen, FolderPlus, History, MoreHorizontal, Move, Pencil, RefreshCw, Save, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, DocumentFolder, DocumentKind, DocumentSummary, WorkspaceDocument } from '@/api'
@@ -10,9 +10,13 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import MarkdownEditor from './MarkdownEditor'
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Skeleton } from '@/components/ui/skeleton'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { loadDocumentOnce, readDocumentCache, removeCachedDocument, writeDocumentCache } from './documentCache'
 
+const MarkdownEditor = lazy(() => import('./MarkdownEditor'))
 const kinds:DocumentKind[]=['DESIGN','ARCHITECTURE','REQUIREMENT','MEETING','RETROSPECTIVE']
 const zhKind:Record<DocumentKind,string>={DESIGN:'设计',ARCHITECTURE:'架构',REQUIREMENT:'需求',MEETING:'会议',RETROSPECTIVE:'复盘'}
 type Project={id:string;name:string}
@@ -22,6 +26,7 @@ type EditAction={type:'folder';folder?:DocumentFolder;parentId?:string|null}|{ty
 
 export default function DocumentsPage({workspaceId,projects,en}:{workspaceId:string;projects:Project[];en:boolean}) {
   const initial=readDocumentCache(workspaceId)
+  const isMobile=useIsMobile()
   const [items,setItems]=useState<DocumentSummary[]>(initial?.items??[]),[folders,setFolders]=useState<DocumentFolder[]>(initial?.folders??[])
   const [document,setDocument]=useState<WorkspaceDocument|null>(()=>initial?.selectedId?initial.documents[initial.selectedId]??null:null),[draft,setDraft]=useState<WorkspaceDocument|null>(()=>initial?.selectedId?initial.documents[initial.selectedId]??null:null)
   const [creating,setCreating]=useState<{folderId:string|null}|null>(null),[editing,setEditing]=useState<EditAction>(null),[menu,setMenu]=useState<ContextState>(null)
@@ -69,32 +74,43 @@ export default function DocumentsPage({workspaceId,projects,en}:{workspaceId:str
   return <section className="documents-page">
     <header><div><h1>{labels.title}</h1><p>{labels.subtitle}</p></div><Button onClick={()=>setCreating({folderId:null})}><FilePlus2 data-icon="inline-start" />{labels.newDocument}</Button></header>
     {error?<p className="page-error" role="alert">{error}</p>:null}
-    <div className="documents-layout">
-      <aside className="document-list" aria-label={labels.title} onContextMenu={event=>showMenu(event,{type:'root'})}>
-        <div className="document-list-toolbar"><strong>{labels.root}</strong><span><Button size="icon-sm" variant="ghost" title={labels.newFolder} onClick={()=>setEditing({type:'folder',parentId:null})}><FolderPlus/></Button><Button size="icon-sm" variant="ghost" title={labels.refresh} onClick={()=>void refresh()} disabled={refreshing}><RefreshCw className={refreshing?'spin':''}/></Button></span></div>
-        <div className="document-tree">
-          {roots.map(folder=><FolderNode key={folder.id} folder={folder} folders={folders} items={items} expanded={expanded} selectedId={document?.id??null} en={en} onToggle={id=>setExpanded(current=>{const next=new Set(current);next.has(id)?next.delete(id):next.add(id);return next})} onOpen={id=>void open(id)} onPrefetch={id=>void open(id,{background:true})} onMenu={showMenu}/>) }
-          {rootItems.map(item=><DocumentNode key={item.id} item={item} selected={item.id===document?.id} onOpen={id=>void open(id)} onPrefetch={id=>void open(id,{background:true})} onMenu={showMenu}/>) }
-        </div>
-        {!items.length&&!refreshing?<Empty><EmptyHeader><EmptyMedia variant="icon"><BookOpen /></EmptyMedia><EmptyTitle>{labels.empty}</EmptyTitle><EmptyDescription>{labels.emptyHint}</EmptyDescription></EmptyHeader></Empty>:null}
-      </aside>
-      {draft?<main className="document-workspace">
-        <div className="document-meta">
-          <Input aria-label={en?'Document title':'文档标题'} value={draft.title} onChange={event=>setDraft({...draft,title:event.target.value})} />
-          <ChoiceSelect label={en?'Document type':'文档类型'} value={draft.kind} options={kinds.map(value=>({value,label:en?value:zhKind[value]}))} onChange={kind=>setDraft({...draft,kind})} />
-          <ChoiceSelect label={en?'Project':'关联项目'} value={draft.projectId||'NONE'} options={[{value:'NONE',label:en?'Workspace-wide':'工作区级'},...projects.map(project=>({value:project.id,label:project.name}))]} onChange={projectId=>setDraft({...draft,projectId:projectId==='NONE'?null:projectId})} />
-          <Button variant="outline" onClick={async()=>setHistory(await api.documentVersions(workspaceId,draft.id))}><History data-icon="inline-start" />v{draft.version}</Button>
-          <Button disabled={busy||!draft.title.trim()||!hasChanges} onClick={()=>void save()}><Save data-icon="inline-start" />{busy?labels.saving:labels.save}</Button>
-        </div>
-        <MarkdownEditor key={`${draft.id}-${document?.version}`} value={draft.content} onChange={content=>setDraft(current=>current?{...current,content}:current)} />
-      </main>:<Card className="document-placeholder"><CardContent><BookOpen/><span>{labels.choose}</span></CardContent></Card>}
-    </div>
+    <ResizablePanelGroup className="documents-layout" orientation={isMobile?'vertical':'horizontal'}>
+      <ResizablePanel defaultSize={isMobile?'180px':'270px'} minSize={isMobile?'140px':'220px'} maxSize={isMobile?'240px':'420px'}>
+        <aside className="document-list" aria-label={labels.title} onContextMenu={event=>showMenu(event,{type:'root'})}>
+          <div className="document-list-toolbar"><strong>{labels.root}</strong><span><Button size="icon-sm" variant="ghost" title={labels.newFolder} onClick={()=>setEditing({type:'folder',parentId:null})}><FolderPlus/></Button><Button size="icon-sm" variant="ghost" title={labels.refresh} onClick={()=>void refresh()} disabled={refreshing}><RefreshCw className={refreshing?'spin':''}/></Button></span></div>
+          <ScrollArea className="document-tree-scroll">
+            <div className="document-tree">
+              {roots.map(folder=><FolderNode key={folder.id} folder={folder} folders={folders} items={items} expanded={expanded} selectedId={document?.id??null} en={en} onToggle={id=>setExpanded(current=>{const next=new Set(current);next.has(id)?next.delete(id):next.add(id);return next})} onOpen={id=>void open(id)} onPrefetch={id=>void open(id,{background:true})} onMenu={showMenu}/>) }
+              {rootItems.map(item=><DocumentNode key={item.id} item={item} selected={item.id===document?.id} onOpen={id=>void open(id)} onPrefetch={id=>void open(id,{background:true})} onMenu={showMenu}/>) }
+            </div>
+            {!items.length&&!refreshing?<Empty><EmptyHeader><EmptyMedia variant="icon"><BookOpen /></EmptyMedia><EmptyTitle>{labels.empty}</EmptyTitle><EmptyDescription>{labels.emptyHint}</EmptyDescription></EmptyHeader></Empty>:null}
+          </ScrollArea>
+        </aside>
+      </ResizablePanel>
+      <ResizableHandle withHandle={!isMobile} />
+      <ResizablePanel defaultSize={isMobile?'640px':'75%'} minSize={isMobile?'480px':'420px'}>
+        {draft?<main className="document-workspace">
+          <div className="document-meta">
+            <Input aria-label={en?'Document title':'文档标题'} value={draft.title} onChange={event=>setDraft({...draft,title:event.target.value})} />
+            <ChoiceSelect label={en?'Document type':'文档类型'} value={draft.kind} options={kinds.map(value=>({value,label:en?value:zhKind[value]}))} onChange={kind=>setDraft({...draft,kind})} />
+            <ChoiceSelect label={en?'Project':'关联项目'} value={draft.projectId||'NONE'} options={[{value:'NONE',label:en?'Workspace-wide':'工作区级'},...projects.map(project=>({value:project.id,label:project.name}))]} onChange={projectId=>setDraft({...draft,projectId:projectId==='NONE'?null:projectId})} />
+            <Button variant="outline" onClick={async()=>setHistory(await api.documentVersions(workspaceId,draft.id))}><History data-icon="inline-start" />v{draft.version}</Button>
+            <Button disabled={busy||!draft.title.trim()||!hasChanges} onClick={()=>void save()}><Save data-icon="inline-start" />{busy?labels.saving:labels.save}</Button>
+          </div>
+          <Suspense fallback={<EditorSkeleton label={en?'Loading editor':'正在加载编辑器'} />}>
+            <MarkdownEditor key={`${draft.id}-${document?.version}`} value={draft.content} onChange={content=>setDraft(current=>current?{...current,content}:current)} />
+          </Suspense>
+        </main>:<Card className="document-placeholder"><CardContent><BookOpen/><span>{labels.choose}</span></CardContent></Card>}
+      </ResizablePanel>
+    </ResizablePanelGroup>
     <CreateDocumentDialog open={Boolean(creating)} folderId={creating?.folderId??null} onOpenChange={open=>!open&&setCreating(null)} projects={projects} folders={folders} en={en} onCreate={create}/>
     <EditDialog action={editing} folders={folders} labels={labels} onClose={()=>setEditing(null)} onCreateFolder={createFolder} onRename={rename} onMove={moveDocument}/>
-    <Dialog open={Boolean(history)} onOpenChange={open=>!open&&setHistory(null)}><DialogContent><DialogHeader><DialogTitle>{labels.history}</DialogTitle><DialogDescription>{labels.historyHint}</DialogDescription></DialogHeader><div className="version-list">{history?.map(item=><Card size="sm" key={item.id}><CardContent><Clock3/><span><strong>v{item.version} · {item.title}</strong><small>{item.createdByName} · {new Date(item.createdAt).toLocaleString()}</small></span>{item.changeNote?<Badge variant="outline">{item.changeNote}</Badge>:null}</CardContent></Card>)}</div></DialogContent></Dialog>
+    <Dialog open={Boolean(history)} onOpenChange={open=>!open&&setHistory(null)}><DialogContent><DialogHeader><DialogTitle>{labels.history}</DialogTitle><DialogDescription>{labels.historyHint}</DialogDescription></DialogHeader><ScrollArea className="version-list">{history?.map(item=><Card size="sm" key={item.id}><CardContent><Clock3/><span><strong>v{item.version} · {item.title}</strong><small>{item.createdByName} · {new Date(item.createdAt).toLocaleString()}</small></span>{item.changeNote?<Badge variant="outline">{item.changeNote}</Badge>:null}</CardContent></Card>)}</ScrollArea></DialogContent></Dialog>
     {menu?<ContextMenu state={menu} labels={labels} onNewDocument={folderId=>{setMenu(null);setCreating({folderId})}} onNewFolder={parentId=>{setMenu(null);setEditing({type:'folder',parentId})}} onRename={target=>{setMenu(null);setEditing('parentId'in target?{type:'folder',folder:target}:{type:'rename-document',document:target})}} onDuplicate={target=>{setMenu(null);void duplicate(target)}} onMove={target=>{setMenu(null);setEditing({type:'move-document',document:target})}} onRemove={target=>{setMenu(null);void remove(target)}}/>:null}
   </section>
 }
+
+function EditorSkeleton({label}:{label:string}) {return <div className="document-editor-skeleton" aria-busy="true" aria-label={label}><div className="document-editor-skeleton-toolbar"><Skeleton/><Skeleton/><Skeleton/></div><div className="document-editor-skeleton-body"><Skeleton/><Skeleton/><Skeleton/><Skeleton/><Skeleton/></div></div>}
 
 function DocumentNode({item,selected,onOpen,onPrefetch,onMenu}:{item:DocumentSummary;selected:boolean;onOpen:(id:string)=>void;onPrefetch:(id:string)=>void;onMenu:(event:ReactMouseEvent,target:MenuTarget)=>void}) {return <button className={`document-tree-row document-file ${selected?'active':''}`} onClick={()=>onOpen(item.id)} onMouseEnter={()=>onPrefetch(item.id)} onContextMenu={event=>onMenu(event,{type:'document',document:item})}><File/><span><strong>{item.title}</strong><small>{item.projectName||zhKind[item.kind]}</small></span><Badge variant="secondary">v{item.version}</Badge></button>}
 

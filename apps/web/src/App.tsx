@@ -1,4 +1,4 @@
-import { DragEvent, FormEvent, lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { DragEvent, FormEvent, lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   Archive,
   Bell,
@@ -34,6 +34,15 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import {
+  Navigate,
+  NavLink,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from "react-router-dom";
+import {
   ColumnId,
   Priority,
   Task,
@@ -43,8 +52,12 @@ import {
 } from "./board";
 import { api, type GitHubReference, type TaskColumnRole, type TaskImportPreview, type TaskWorkbookMapping } from "./api";
 import AuthScreen from "./AuthScreen";
-import type { Page } from "./WorkspacePage";
 import ChoiceSelect from "./components/ChoiceSelect";
+import {
+  appPaths,
+  getProjectIdFromPath,
+  workspacePageRoutes,
+} from "./routes";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -113,6 +126,23 @@ import {
   SheetTitle,
 } from "./components/ui/sheet";
 import { Toaster } from "./components/ui/sonner";
+import {
+  Sidebar as ShadcnSidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarHeader,
+  SidebarInset,
+  SidebarProvider,
+  SidebarRail,
+  SidebarTrigger,
+} from "./components/ui/sidebar";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "./components/ui/breadcrumb";
 import { ToggleGroup, ToggleGroupItem } from "./components/ui/toggle-group";
 import TaskComments from "./features/tasks/TaskComments";
 import TaskSubtasks from "./features/tasks/TaskSubtasks";
@@ -296,16 +326,13 @@ function UserAvatar({
   );
 }
 
-function Sidebar({
+function AppSidebar({
   workspaces,
   workspaceId,
   onWorkspace,
   onNewWorkspace,
   projects,
-  page,
-  onNavigate,
-  activeProject,
-  setActiveProject,
+  activeProjectId,
   onNewProject,
   onRenameProject,
   onDeleteProject,
@@ -323,10 +350,7 @@ function Sidebar({
   onWorkspace: (id: string) => void;
   onNewWorkspace: () => void;
   projects: Project[];
-  page: Page;
-  onNavigate: (page: Page) => void;
-  activeProject: number;
-  setActiveProject: (index: number) => void;
+  activeProjectId: string;
   onNewProject: () => void;
   onRenameProject: (project: Project) => void;
   onDeleteProject: (project: Project) => void;
@@ -340,8 +364,12 @@ function Sidebar({
   t: Copy;
 }) {
   const workspace = workspaces.find((item) => item.id === workspaceId);
+  const navigate = useNavigate();
+  const navClassName = ({ isActive }: { isActive: boolean }) =>
+    `nav-item ${isActive ? "active" : ""}`;
   return (
-    <aside className="sidebar">
+    <ShadcnSidebar className="app-sidebar" collapsible="icon">
+      <SidebarHeader>
       <div className="brand">
         <span className="brand-mark">闲</span>
         <DropdownMenu>
@@ -380,59 +408,42 @@ function Sidebar({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      </SidebarHeader>
+      <SidebarContent>
       <nav aria-label="主导航">
         <p className="nav-label">{t.switchWorkspace}</p>
-        <Button
-          variant="ghost"
-          className={`nav-item ${page === "inbox" ? "active" : ""}`}
-          onClick={() => onNavigate("inbox")}
-        >
+        <NavLink className={navClassName} to={appPaths.inbox}>
           <Bell data-icon="inline-start" />
           {t.inbox}
-        </Button>
-        <Button
-          variant="ghost"
-          className={`nav-item ${page === "overview" ? "active" : ""}`}
-          onClick={() => onNavigate("overview")}
-        >
+        </NavLink>
+        <NavLink className={navClassName} to={appPaths.overview}>
           <LayoutDashboard data-icon="inline-start" />
           {t.overview}
-        </Button>
-        <Button
-          variant="ghost"
-          className={`nav-item ${page === "tasks" ? "active" : ""}`}
-          onClick={() => onNavigate("tasks")}
+        </NavLink>
+        <NavLink
+          className={({ isActive }) =>
+            `nav-item ${isActive ? "active" : ""}`
+          }
+          to={activeProjectId ? appPaths.project(activeProjectId) : appPaths.home}
         >
           <Command data-icon="inline-start" />
           {t.myTasks}
           <Badge className="count" variant="secondary">
             {taskCount}
           </Badge>
-        </Button>
-        <Button
-          variant="ghost"
-          className={`nav-item ${page === "calendar" ? "active" : ""}`}
-          onClick={() => onNavigate("calendar")}
-        >
+        </NavLink>
+        <NavLink className={navClassName} to={appPaths.calendar}>
           <CalendarDays data-icon="inline-start" />
           {t.calendar}
-        </Button>
-        <Button
-          variant="ghost"
-          className={`nav-item ${page === "documents" ? "active" : ""}`}
-          onClick={() => onNavigate("documents")}
-        >
+        </NavLink>
+        <NavLink className={navClassName} to={appPaths.documents}>
           <FileText data-icon="inline-start" />
           {t.documents}
-        </Button>
-        <Button
-          variant="ghost"
-          className={`nav-item ${page === "plans" ? "active" : ""}`}
-          onClick={() => onNavigate("plans")}
-        >
+        </NavLink>
+        <NavLink className={navClassName} to={appPaths.plans}>
           <Sparkles data-icon="inline-start" />
           {t.plans}
-        </Button>
+        </NavLink>
         <p className="nav-label nav-label--project">
           {t.project}
           <Button
@@ -444,19 +455,20 @@ function Sidebar({
             <Plus />
           </Button>
         </p>
-        {projects.map((project, index) => (
+        {projects.map((project) => (
           <div className="project-row" key={project.id}>
-            <Button
-              variant="ghost"
-              className={`project-link ${index === activeProject ? "selected" : ""}`}
-              onClick={() => setActiveProject(index)}
+            <NavLink
+              className={({ isActive }) =>
+                `project-link ${isActive ? "selected" : ""}`
+              }
+              to={appPaths.project(project.id)}
             >
               <span
                 className="project-dot"
                 style={{ background: project.color }}
               />
               {project.name}
-            </Button>
+            </NavLink>
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={
@@ -491,32 +503,22 @@ function Sidebar({
             </DropdownMenu>
           </div>
         ))}
-        <Button
-          variant="ghost"
-          className={`nav-item ${page === "archived" ? "active" : ""}`}
-          onClick={() => onNavigate("archived")}
-        >
+        <NavLink className={navClassName} to={appPaths.archived}>
           <Archive data-icon="inline-start" />
           {t.archived}
-        </Button>
+        </NavLink>
       </nav>
+      </SidebarContent>
+      <SidebarFooter>
       <div className="sidebar-bottom">
-        <Button
-          variant="ghost"
-          className={`nav-item ${page === "members" ? "active" : ""}`}
-          onClick={() => onNavigate("members")}
-        >
+        <NavLink className={navClassName} to={appPaths.members}>
           <Users data-icon="inline-start" />
           {t.members}
-        </Button>
-        <Button
-          variant="ghost"
-          className={`nav-item ${page === "settings" ? "active" : ""}`}
-          onClick={() => onNavigate("settings")}
-        >
+        </NavLink>
+        <NavLink className={navClassName} to={appPaths.settings}>
           <Settings data-icon="inline-start" />
           {t.settings}
-        </Button>
+        </NavLink>
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
@@ -537,7 +539,7 @@ function Sidebar({
           <DropdownMenuContent side="right" align="end">
             <DropdownMenuGroup>
               <DropdownMenuLabel>{t.account}</DropdownMenuLabel>
-              <DropdownMenuItem onClick={() => onNavigate("settings")}>
+              <DropdownMenuItem onClick={() => navigate(appPaths.settings)}>
                 <Settings />
                 {t.settings}
               </DropdownMenuItem>
@@ -564,7 +566,9 @@ function Sidebar({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-    </aside>
+      </SidebarFooter>
+      <SidebarRail />
+    </ShadcnSidebar>
   );
 }
 
@@ -1042,9 +1046,7 @@ export default function App() {
     [confirmingBulkDelete,setConfirmingBulkDelete]=useState(false),
     [quickTitle,setQuickTitle]=useState(''),
     [quickBusy,setQuickBusy]=useState(false);
-  const [page, setPage] = useState<Page>("tasks"),
-    [activeProject, setActiveProject] = useState(0),
-    [view, setView] = useState<"board" | "list">("board"),
+  const [activeProjectId, setActiveProjectId] = useState(""),
     [editing, setEditing] = useState<Task | null>(null),
     [renaming, setRenaming] = useState<Project | null>(null),
     [deleting, setDeleting] = useState<Project | null>(null),
@@ -1058,7 +1060,18 @@ export default function App() {
   const searchRef = useRef<HTMLInputElement>(null),
     importRef = useRef<HTMLInputElement>(null),
     t: Copy = copy[lang];
-  const loadWorkspace = async (id: string) => {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const routeProjectId = getProjectIdFromPath(location.pathname);
+  const project =
+      projects.find((item) => item.id === routeProjectId) ??
+      projects.find((item) => item.id === activeProjectId),
+    view: "board" | "list" =
+      searchParams.get("view") === "list" ? "list" : "board",
+    setView = (next: "board" | "list") =>
+      setSearchParams(next === "board" ? {} : { view: next }, { replace: true });
+  const loadWorkspace = async (id: string, resetPath = true) => {
     const [nextProjects, nextMembers] = await Promise.all([
       api.projects(id),
       api.members(id),
@@ -1066,10 +1079,16 @@ export default function App() {
     setWorkspaceId(id);
     setProjects(nextProjects);
     setMembers(nextMembers);
-    setActiveProject(0);
+    setActiveProjectId(nextProjects[0]?.id ?? "");
     setTasks([]);
     setQuery("");
-    setPage("tasks");
+    if (resetPath)
+      navigate(
+        nextProjects[0]
+          ? appPaths.project(nextProjects[0].id)
+          : appPaths.inbox,
+        { replace: true },
+      );
   };
   const boot = async () => {
     try {
@@ -1079,7 +1098,7 @@ export default function App() {
       const next = await api.workspaces();
       setWorkspaces(next);
       if (!next[0]) throw new Error("请先创建工作区");
-      await loadWorkspace(next[0].id);
+      await loadWorkspace(next[0].id, false);
       setAuth("in");
     } catch {
       setAuth("out");
@@ -1107,7 +1126,6 @@ export default function App() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
   useEffect(() => {
-    const project = projects[activeProject];
     if (!project || !workspaceId) return;
     setError("");
     Promise.all([
@@ -1125,15 +1143,30 @@ export default function App() {
         setTasks(nextTasks);
       })
       .catch((reason) => setError(reason.message));
-  }, [workspaceId, projects, activeProject]);
+  }, [workspaceId, projects, project?.id]);
+  useEffect(() => {
+    if (
+      routeProjectId &&
+      routeProjectId !== activeProjectId &&
+      projects.some((item) => item.id === routeProjectId)
+    )
+      setActiveProjectId(routeProjectId);
+  }, [routeProjectId, projects, activeProjectId]);
+  useEffect(() => {
+    if (
+      routeProjectId &&
+      projects.length > 0 &&
+      !projects.some((item) => item.id === routeProjectId)
+    )
+      navigate(appPaths.project(projects[0].id), { replace: true });
+  }, [routeProjectId, projects, navigate]);
   const shownTasks = useMemo(
-      () =>
-        filterTasks(tasks, query).filter(
-          (task) => kind === "ALL" || task.kind === kind,
-        ),
-      [tasks, query, kind],
-    ),
-    project = projects[activeProject];
+    () =>
+      filterTasks(tasks, query).filter(
+        (task) => kind === "ALL" || task.kind === kind,
+      ),
+    [tasks, query, kind],
+  );
   const selectedTaskCount=selectedTaskIds.length,allShownSelected=shownTasks.length>0&&shownTasks.every(task=>selectedTaskIds.includes(task.id));
   useEffect(()=>{setSelectedTaskIds([]);setConfirmingBulkDelete(false)},[workspaceId,project?.id,view,query,kind])
   const reload = async () => {
@@ -1228,7 +1261,11 @@ export default function App() {
     await api.createProject(workspaceId, { name, code: code! });
     const next = await api.projects(workspaceId);
     setProjects(next);
-    setActiveProject(next.length - 1);
+    const created = next[next.length - 1];
+    if (created) {
+      setActiveProjectId(created.id);
+      navigate(appPaths.project(created.id));
+    }
     toast.success(lang === "zh" ? "项目已创建" : "Project created");
   };
   const createWorkspace = async (name: string) => {
@@ -1247,8 +1284,6 @@ export default function App() {
     await api.updateProject(workspaceId, target.id, { name });
     const next = await api.projects(workspaceId);
     setProjects(next);
-    const nextIndex = next.findIndex((item) => item.id === target.id);
-    if (nextIndex >= 0) setActiveProject(nextIndex);
     toast.success(lang === "zh" ? "项目已重命名" : "Project renamed");
   };
   const selectWorkspace = async (id: string) => {
@@ -1262,9 +1297,19 @@ export default function App() {
     if (!deleting) return;
     try {
       await api.deleteProject(workspaceId, deleting.id);
+      const next = await api.projects(workspaceId);
       setDeleting(null);
-      setActiveProject(0);
-      setProjects(await api.projects(workspaceId));
+      setProjects(next);
+      if (deleting.id === project?.id) {
+        const fallback = next[0];
+        setActiveProjectId(fallback?.id ?? "");
+        navigate(
+          fallback ? appPaths.project(fallback.id) : appPaths.inbox,
+          { replace: true },
+        );
+      } else if (!next.some((item) => item.id === activeProjectId)) {
+        setActiveProjectId(next[0]?.id ?? "");
+      }
       toast.success(lang === "zh" ? "项目已删除" : "Project deleted");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "删除失败");
@@ -1282,21 +1327,22 @@ export default function App() {
     }
   };
   if (auth === "loading") return <main className="boot">正在连接工作区…</main>;
-  if (auth === "out") return <AuthScreen onReady={() => void boot()} />;
+  if (auth === "out")
+    return location.pathname === appPaths.login ? (
+      <AuthScreen onReady={() => void boot()} />
+    ) : (
+      <Navigate to={appPaths.login} replace />
+    );
+  if (location.pathname === appPaths.login)
+    return <Navigate to={appPaths.home} replace />;
   const sidebar = (
-    <Sidebar
+    <AppSidebar
       workspaces={workspaces}
       workspaceId={workspaceId}
       onWorkspace={(id) => void selectWorkspace(id)}
       onNewWorkspace={() => setCreating("workspace")}
       projects={projects}
-      page={page}
-      onNavigate={setPage}
-      activeProject={activeProject}
-      setActiveProject={(index) => {
-        setActiveProject(index);
-        setPage("tasks");
-      }}
+      activeProjectId={project?.id ?? ""}
       onNewProject={() => setCreating("project")}
       onRenameProject={setRenaming}
       onDeleteProject={setDeleting}
@@ -1311,10 +1357,11 @@ export default function App() {
     />
   );
   return (
-    <div className="app-shell">
+    <SidebarProvider className="app-shell" style={{ "--sidebar-width": "228px" } as CSSProperties}>
       {sidebar}
-      <main className="workspace">
+      <SidebarInset className="workspace">
         <header className="topbar">
+          <SidebarTrigger className="sidebar-toggle" aria-label={lang === "zh" ? "切换侧边栏" : "Toggle sidebar"} />
           <InputGroup className="search">
             <InputGroupAddon>
               <Search />
@@ -1326,7 +1373,8 @@ export default function App() {
               value={query}
               onChange={(event) => {
                 setQuery(event.target.value);
-                if (event.target.value) setPage("tasks");
+                if (event.target.value && !routeProjectId && project)
+                  navigate(appPaths.project(project.id));
               }}
               placeholder={t.search}
             />
@@ -1349,7 +1397,7 @@ export default function App() {
               variant="ghost"
               className="member-stack"
               aria-label={t.viewMembers}
-              onClick={() => setPage("members")}
+              onClick={() => navigate(appPaths.members)}
             >
               <AvatarGroup>
                 {members.slice(0, 3).map((member) => (
@@ -1368,14 +1416,28 @@ export default function App() {
               {t.createFirst}
             </Button>
           </section>
-        ) : page === "tasks" ? (
+        ) : (
+        <Routes>
+          <Route
+            index
+            element={<Navigate to={appPaths.project(project.id)} replace />}
+          />
+          <Route
+            path={appPaths.legacyTasks.slice(1)}
+            element={<Navigate to={appPaths.project(project.id)} replace />}
+          />
+          <Route path={appPaths.projectPattern.slice(1)} element={
           <>
             <section className="page-head">
-              <div className="breadcrumbs">
-                <span>{t.project}</span>
-                <b>/</b>
-                <span>{project.name}</span>
-              </div>
+              <Breadcrumb className="breadcrumbs">
+                <BreadcrumbList>
+                  <BreadcrumbItem>{t.project}</BreadcrumbItem>
+                  <BreadcrumbSeparator />
+                  <BreadcrumbItem>
+                    <BreadcrumbPage>{project.name}</BreadcrumbPage>
+                  </BreadcrumbItem>
+                </BreadcrumbList>
+              </Breadcrumb>
               <div className="title-row">
                 <div>
                   <span className="eyebrow">
@@ -1554,9 +1616,11 @@ export default function App() {
               </section>
             )}
           </>
-        ) : (
+          } />
+          {workspacePageRoutes.map((nextPage) => (
+            <Route key={nextPage} path={nextPage} element={
           <Suspense fallback={<section className="boot">{lang === "zh" ? "正在加载工作区…" : "Loading workspace…"}</section>}><WorkspacePage
-            page={page}
+            page={nextPage}
             tasks={tasks}
             workspaceId={workspaceId}
             projectId={project.id}
@@ -1571,8 +1635,12 @@ export default function App() {
             workspaceRole={workspaces.find((item) => item.id === workspaceId)?.role ?? "VIEWER"}
             onWorkspaceRestored={async (id) => { const next=await api.workspaces();setWorkspaces(next);await loadWorkspace(id) }}
           /></Suspense>
+          } />
+          ))}
+          <Route path="*" element={<Navigate to={appPaths.home} replace />} />
+        </Routes>
         )}
-      </main>
+      </SidebarInset>
       {project ? (
         <TaskDialog
           task={editing}
@@ -1633,6 +1701,6 @@ export default function App() {
         </AlertDialogContent>
       </AlertDialog>
       <Toaster theme={theme} />
-    </div>
+    </SidebarProvider>
   );
 }
