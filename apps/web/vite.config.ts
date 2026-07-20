@@ -18,30 +18,6 @@ export default defineConfig(({ mode }) => {
     plugins: [react(), tailwindcss()],
     define: { __APP_COMMIT__: JSON.stringify(gitCommit(env.APP_COMMIT)) },
     resolve: { alias: { '@': path.resolve(__dirname, './src') } },
-    build: {
-      rolldownOptions: {
-        output: {
-          codeSplitting: {
-            groups: [
-              {
-                name: 'plate-editor',
-                test: /[\\/]node_modules[\\/](?:@platejs|platejs|slate|slate-dom|slate-hyperscript|slate-react)[\\/]/,
-                priority: 20,
-                minSize: 100_000,
-                maxSize: 400_000,
-              },
-              {
-                name: 'vendor',
-                test: /[\\/]node_modules[\\/]/,
-                priority: 10,
-                minSize: 100_000,
-                maxSize: 400_000,
-              },
-            ],
-          },
-        },
-      },
-    },
     server: {
       port: webPort,
       strictPort: true,
