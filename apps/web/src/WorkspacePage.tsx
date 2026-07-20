@@ -193,7 +193,7 @@ export default function WorkspacePage({
           action={
             <Button onClick={() => setAdding(true)}>
               <UserPlus data-icon="inline-start" />
-              {en ? "Add member" : "添加成员"}
+              {en ? "Invite member" : "邀请成员"}
             </Button>
           }
         >
@@ -277,14 +277,21 @@ function AddMemberDialog({
 }) {
   const [role, setRole] = useState<Role>("MEMBER"),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [inviteUrl, setInviteUrl] = useState("");
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setBusy(true);
     setError("");
+    setInviteUrl("");
     const email = String(new FormData(event.currentTarget).get("email"));
     try {
-      await api.addMember(workspaceId, { email, role });
+      const result = await api.addMember(workspaceId, { email, role });
+      if (result.invited && result.invitation?.inviteUrl) {
+        setInviteUrl(result.invitation.inviteUrl);
+        await onAdded();
+        return;
+      }
       await onAdded();
       onOpenChange(false);
     } catch (reason) {
@@ -292,12 +299,16 @@ function AddMemberDialog({
         reason instanceof Error
           ? reason.message
           : en
-            ? "Failed to add member"
-            : "添加失败",
+            ? "Failed to invite member"
+            : "邀请失败",
       );
     } finally {
       setBusy(false);
     }
+  };
+  const copyInvite = async () => {
+    if (!inviteUrl) return;
+    await navigator.clipboard.writeText(inviteUrl);
   };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -305,14 +316,36 @@ function AddMemberDialog({
         <form onSubmit={submit}>
           <DialogHeader>
             <DialogTitle>
-              {en ? "Add workspace member" : "添加工作区成员"}
+              {en ? "Invite workspace member" : "邀请工作区成员"}
             </DialogTitle>
             <DialogDescription>
               {en
-                ? "The user must register first. Add them by account email and assign a role."
-                : "成员需先自行注册账号，再通过注册邮箱加入并分配角色。"}
+                ? "Enter an email to add an existing account or send an invite link."
+                : "输入邮箱即可添加已有账号，或为未注册用户生成邀请链接。"}
             </DialogDescription>
           </DialogHeader>
+          {inviteUrl ? (
+            <FieldGroup className="member-form">
+              <Field>
+                <FieldLabel>{en ? "Invite link" : "邀请链接"}</FieldLabel>
+                <Input readOnly value={inviteUrl} />
+                <FieldDescription>
+                  {en
+                    ? "Share this link with the invitee. It expires in 7 days."
+                    : "请将此链接发送给对方，7 天内有效。"}
+                </FieldDescription>
+              </Field>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                  {en ? "Close" : "关闭"}
+                </Button>
+                <Button type="button" onClick={() => void copyInvite()}>
+                  {en ? "Copy link" : "复制链接"}
+                </Button>
+              </DialogFooter>
+            </FieldGroup>
+          ) : (
+            <>
           <FieldGroup className="member-form">
             <Field data-invalid={Boolean(error)}>
               <FieldLabel htmlFor="member-email">
@@ -328,8 +361,8 @@ function AddMemberDialog({
               />
               <FieldDescription>
                 {en
-                  ? "Use the email linked to their account."
-                  : "请输入成员注册账号时使用的邮箱。"}
+                  ? "Existing users are added immediately; others receive an invite link."
+                  : "已有账号将直接加入；未注册邮箱会生成邀请链接。"}
               </FieldDescription>
               {error ? <FieldError>{error}</FieldError> : null}
             </Field>
@@ -359,13 +392,15 @@ function AddMemberDialog({
             <Button type="submit" disabled={busy}>
               {busy
                 ? en
-                  ? "Adding…"
-                  : "添加中…"
+                  ? "Inviting…"
+                  : "邀请中…"
                 : en
-                  ? "Add member"
-                  : "添加成员"}
+                  ? "Send invite"
+                  : "发送邀请"}
             </Button>
           </DialogFooter>
+            </>
+          )}
         </form>
       </DialogContent>
     </Dialog>

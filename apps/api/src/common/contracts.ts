@@ -1,6 +1,8 @@
 import { z } from 'zod'
 
 export const registerSchema = z.object({ email: z.string().email(), name: z.string().trim().min(1).max(80), password: z.string().min(10).max(128), workspaceName: z.string().trim().min(1).max(80) }).strict()
+export const registerInviteSchema = z.object({ token: z.string().min(16), name: z.string().trim().min(1).max(80), password: z.string().min(10).max(128) }).strict()
+export const acceptInviteSchema = z.object({ token: z.string().min(16) }).strict()
 export const loginSchema = z.object({ email: z.string().email(), password: z.string().min(1) }).strict()
 export const workspaceSchema = z.object({ name: z.string().trim().min(1).max(80) }).strict()
 export const memberSchema = z.object({ email: z.string().email(), role: z.enum(['ADMIN','MEMBER','VIEWER']) }).strict()

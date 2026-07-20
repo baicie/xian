@@ -13,11 +13,11 @@ import { PlanController, PlanService } from './modules/plans.js'
 import { McpController, McpService, McpTokenController, McpTokenService } from './modules/mcp.js'
 import { TransferController, TransferService } from './modules/transfer.js'
 import { GitHubController, GitHubService } from './modules/github.js'
-import { AssetController, AssetService } from './modules/assets.js'
+import { InvitationController, InvitationService } from './modules/invitations.js'
 
 @Module({
-  controllers: [AuthController, WorkspaceController, ProjectController, TaskController, AssetController, DocumentController, PlanController, McpTokenController, TransferController, GitHubController, McpController, SystemController],
-  providers: [DatabaseService, AuthService, WorkspaceService, ProjectService, TaskService, AssetService, DocumentService, PlanService, McpTokenService, McpService, TransferService, GitHubService, { provide: APP_GUARD, useClass: SessionGuard }],
+  controllers: [AuthController, WorkspaceController, ProjectController, TaskController, AssetController, DocumentController, PlanController, McpTokenController, TransferController, GitHubController, McpController, SystemController, InvitationController],
+  providers: [DatabaseService, AuthService, WorkspaceService, ProjectService, TaskService, AssetService, DocumentService, PlanService, McpTokenService, McpService, TransferService, GitHubService, InvitationService, { provide: APP_GUARD, useClass: SessionGuard }],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) { consumer.apply(requestContext, requestLogger, cookieParser()).forRoutes('{*path}') }

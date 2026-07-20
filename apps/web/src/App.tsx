@@ -33,15 +33,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import {
-  Navigate,
-  NavLink,
-  Route,
-  Routes,
-  useLocation,
-  useNavigate,
-  useSearchParams,
-} from "react-router-dom";
+import { matchPath, Navigate, NavLink, Route, Routes, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ColumnId,
   Priority,
@@ -52,6 +44,7 @@ import {
 } from "./board";
 import { api, type GitHubReference, type TaskColumnRole, type TaskImportPreview, type TaskWorkbookMapping } from "./api";
 import AuthScreen from "./AuthScreen";
+import InviteScreen from "./InviteScreen";
 import ChoiceSelect from "./components/ChoiceSelect";
 import {
   appPaths,
@@ -1327,12 +1320,15 @@ export default function App() {
     }
   };
   if (auth === "loading") return <main className="boot">正在连接工作区…</main>;
-  if (auth === "out")
+  const inviteToken = matchPath(appPaths.invitePattern, location.pathname)?.params.token;
+  if (auth === "out") {
+    if (inviteToken) return <InviteScreen token={decodeURIComponent(inviteToken)} onReady={() => void boot()} />;
     return location.pathname === appPaths.login ? (
       <AuthScreen onReady={() => void boot()} />
     ) : (
       <Navigate to={appPaths.login} replace />
     );
+  }
   if (location.pathname === appPaths.login)
     return <Navigate to={appPaths.home} replace />;
   const sidebar = (
