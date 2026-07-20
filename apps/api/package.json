@@ -8,7 +8,7 @@
     "dev:types": "tsc -p tsconfig.json --watch --preserveWatchOutput",
     "dev:server": "node --env-file-if-exists=../../.env --watch dist/main.js",
     "build": "tsc -p tsconfig.json && node -e \"require('node:fs').cpSync('src/database/migrations', 'dist/database/migrations', { recursive: true })\"",
-    "start": "node dist/main.js",
+    "start": "node --env-file-if-exists=../../.env dist/main.js",
     "test": "vitest run --config vitest.config.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "db:migrate": "tsx --env-file-if-exists=../../.env src/database/migrate.ts"
