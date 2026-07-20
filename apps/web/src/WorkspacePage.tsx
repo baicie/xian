@@ -136,7 +136,7 @@ export default function WorkspacePage({
     };
   useEffect(() => {
     if (page === "members") void loadMemberData();
-    if (page === "archived")
+    if (page === "archived" && projectId)
       api
         .tasks(workspaceId, projectId, true)
         .then(setArchived)

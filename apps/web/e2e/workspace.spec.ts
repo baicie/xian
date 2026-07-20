@@ -1,5 +1,30 @@
 import { expect, test } from '@playwright/test'
 
+test('keeps workspace routes available when the workspace has no projects', async ({ page }) => {
+  await page.route('**/api/v1/**', async route => {
+    const pathname = new URL(route.request().url()).pathname
+    const responses: Record<string, unknown> = {
+      '/api/v1/auth/me': { user: { id: 'user-1', name: '测试用户' }, csrfToken: 'csrf' },
+      '/api/v1/workspaces': [{ id: 'workspace-1', name: '空工作区', slug: 'empty', role: 'OWNER' }],
+      '/api/v1/workspaces/workspace-1/projects': [],
+      '/api/v1/workspaces/workspace-1/members': [{ id: 'user-1', name: '测试用户', email: 'test@example.com', role: 'OWNER', disabledAt: null }],
+      '/api/v1/workspaces/workspace-1/invitations': [],
+      '/api/v1/auth/config': { registrationMode: 'admin_only', allowWorkspaceCreate: true, bootstrapAvailable: false },
+    }
+    const body = responses[pathname]
+    await route.fulfill({
+      status: body === undefined ? 404 : 200,
+      contentType: 'application/json',
+      body: JSON.stringify(body ?? { message: `Unhandled request: ${pathname}` }),
+    })
+  })
+
+  await page.goto('/members')
+  await expect(page.getByRole('heading', { name: '成员' })).toBeVisible()
+  await page.getByRole('link', { name: '设置' }).click()
+  await expect(page.getByRole('heading', { name: '设置' })).toBeVisible()
+})
+
 test('registers a workspace, creates a task, and opens a document editor', async ({ page }) => {
   const pageErrors: Error[] = []
   page.on('pageerror', error => pageErrors.push(error))

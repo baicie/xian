@@ -1409,14 +1409,9 @@ export default function App() {
             </Button>
           ) : null}
         </header>
-        {!project ? (
-          <section className="boot">
-            <Button onClick={() => setCreating("project")}>
-              {t.createFirst}
-            </Button>
-          </section>
-        ) : (
         <Routes>
+          {project ? (
+          <>
           <Route
             index
             element={<Navigate to={appPaths.project(project.id)} replace />}
@@ -1616,13 +1611,27 @@ export default function App() {
             )}
           </>
           } />
+          </>
+          ) : (
+          <>
+            <Route index element={
+              <section className="boot">
+                <Button onClick={() => setCreating("project")}>
+                  {t.createFirst}
+                </Button>
+              </section>
+            } />
+            <Route path={appPaths.legacyTasks.slice(1)} element={<Navigate to={appPaths.home} replace />} />
+            <Route path={appPaths.projectPattern.slice(1)} element={<Navigate to={appPaths.home} replace />} />
+          </>
+          )}
           {workspacePageRoutes.map((nextPage) => (
             <Route key={nextPage} path={nextPage} element={
           <Suspense fallback={<section className="boot">{lang === "zh" ? "正在加载工作区…" : "Loading workspace…"}</section>}><WorkspacePage
             page={nextPage}
             tasks={tasks}
             workspaceId={workspaceId}
-            projectId={project.id}
+            projectId={project?.id ?? ""}
             projectCount={projects.length}
             user={user}
             lang={lang}
@@ -1638,7 +1647,6 @@ export default function App() {
           ))}
           <Route path="*" element={<Navigate to={appPaths.home} replace />} />
         </Routes>
-        )}
       </SidebarInset>
       {project ? (
         <TaskDialog
