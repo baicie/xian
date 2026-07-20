@@ -29,6 +29,7 @@ export const taskPatchSchema = z.object({
   kind: z.enum(['TASK','STORY','BUG']).optional(), typeFields: taskTypeFieldsSchema.optional(), priority: z.enum(['HIGH','MEDIUM','LOW']).optional(), assigneeIds: z.array(z.string().uuid()).max(20).optional(),
   dueDate: z.string().date().nullable().optional(), labels: z.array(z.string().trim().min(1).max(40)).max(20).optional(), version: z.number().int().positive(),
 }).strict()
+export const taskTransitionSchema=z.object({toColumnId:z.string().uuid(),version:z.number().int().positive(),comment:z.string().max(2000).default('')}).strict()
 const bulkTaskIds = z.array(z.string().uuid()).min(1).max(100).refine(ids => new Set(ids).size === ids.length, 'taskIds must be unique')
 export const taskBulkSchema = z.object({
   taskIds: bulkTaskIds,

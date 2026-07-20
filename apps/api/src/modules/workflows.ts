@@ -5,6 +5,19 @@ export type WorkflowStateType='BACKLOG'|'ACTIVE'|'REVIEW'|'DONE'
 type WorkflowColumn={key:string;name:string;color:string;type:WorkflowStateType}
 type WorkflowTransition={from:string;to:string;name:string;bugName:string;requiresComment?:boolean}
 export type WorkflowTemplate={key:WorkflowTemplateKey;name:string;description:string;columns:WorkflowColumn[];transitions:WorkflowTransition[]}
+export type StoredTransition={fromColumnId:string;toColumnId:string;name:string;bugName:string;requiresComment:boolean}
+
+export class WorkflowTransitionError extends Error{
+  constructor(readonly code:'WORKFLOW_TRANSITION_NOT_ALLOWED'|'WORKFLOW_COMMENT_REQUIRED',message:string){super(message)}
+}
+
+export function resolveTransition(transitions:StoredTransition[],fromColumnId:string,toColumnId:string,kind:'TASK'|'STORY'|'BUG',comment:string){
+  const transition=transitions.find(item=>item.fromColumnId===fromColumnId&&item.toColumnId===toColumnId)
+  if(!transition)throw new WorkflowTransitionError('WORKFLOW_TRANSITION_NOT_ALLOWED','当前状态不能流转到目标状态')
+  const normalizedComment=comment.trim()
+  if(transition.requiresComment&&!normalizedComment)throw new WorkflowTransitionError('WORKFLOW_COMMENT_REQUIRED','该状态流转必须填写原因')
+  return{...transition,actionName:kind==='BUG'?transition.bugName:transition.name,comment:normalizedComment||null}
+}
 
 export const workflowTemplates:WorkflowTemplate[]=[
   {key:'SIMPLE',name:'轻量看板',description:'适合无需独立测试环节的小型工作',columns:[
