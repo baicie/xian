@@ -586,6 +586,7 @@ function TaskCard({
         </Badge>
       </span>
       <span className="task-title">{task.title}</span>
+      {task.subtaskTotal?<span className="task-progress"><span><List/>{task.subtaskDone}/{task.subtaskTotal}</span><i><b style={{width:`${(task.subtaskDone??0)/task.subtaskTotal*100}%`}}/></i></span>:null}
       <span className="task-details-row">
         <Badge variant="ghost" className={`priority priority--${task.priority}`}>
           {
@@ -626,6 +627,7 @@ function TaskDialog({
   onClose,
   onSave,
   onDelete,
+  onSubtasksChanged,
   t,
 }: {
   task: Task | null;
@@ -636,6 +638,7 @@ function TaskDialog({
   onClose: () => void;
   onSave: (task: Task) => Promise<void>;
   onDelete: (task: Task) => Promise<void>;
+  onSubtasksChanged: () => Promise<void>;
   t: Copy;
 }) {
   const [draft, setDraft] = useState<Task | null>(task);
@@ -768,7 +771,7 @@ function TaskDialog({
               />
             </Field>
             {githubReferences?<Field><FieldLabel>{t.taskDetails==='任务详情'?'关联 GitHub':'GitHub links'}</FieldLabel><div className="github-reference-list">{githubReferences.length?githubReferences.map(reference=>{const checked=githubLinks.some(link=>link.kind===reference.kind&&link.number===reference.number),id=`github-reference-${reference.kind}-${reference.number}`;return <div className="github-reference" key={`${reference.kind}:${reference.number}`}><Checkbox id={id} checked={checked} onCheckedChange={()=>setGithubLinks(current=>checked?current.filter(link=>link.kind!==reference.kind||link.number!==reference.number):[...current,reference])}/>{reference.kind==='PR'?<GitPullRequest/>:<CircleDot/>}<label htmlFor={id}><strong>{reference.kind} #{reference.number}</strong><small>{reference.title}</small></label><a href={reference.url} target="_blank" rel="noreferrer" aria-label={`Open ${reference.kind} ${reference.number}`}><ExternalLink/></a></div>}):<p className="github-reference-empty">{t.taskDetails==='任务详情'?'仓库中暂无 Issue 或 PR':'No Issues or pull requests found'}</p>}</div></Field>:null}
-            {draft.id!=="new"?<TaskSubtasks workspaceId={workspaceId} taskId={draft.id} en={t.taskDetails!=="任务详情"}/>:null}
+            {draft.id!=="new"?<TaskSubtasks workspaceId={workspaceId} taskId={draft.id} en={t.taskDetails!=="任务详情"} onChanged={onSubtasksChanged}/>:null}
             {draft.id!=="new"?<TaskComments workspaceId={workspaceId} taskId={draft.id} en={t.taskDetails!=="任务详情"}/>:null}
           </FieldGroup></div>
           <SheetFooter className="task-sheet-footer">
@@ -1525,7 +1528,7 @@ export default function App() {
                   <div className="list-row" data-selected={selectedTaskIds.includes(task.id)||undefined} key={task.id}>
                     <Checkbox aria-label={`${lang==='zh'?'选择':'Select'} ${project.code}-${task.number}`} checked={selectedTaskIds.includes(task.id)} onCheckedChange={checked=>toggleTaskSelection(task.id,Boolean(checked))}/>
                     <Button variant="ghost" onClick={() => setEditing(task)}>
-                      <span><b>{project.code}-{task.number}</b>{task.title}</span>
+                      <span><b>{project.code}-{task.number}</b>{task.title}{task.subtaskTotal?<small className="list-task-progress"><List/>{task.subtaskDone}/{task.subtaskTotal}</small>:null}</span>
                       <span>{columns.find((column) => column.id === task.column)?.label}</span>
                       <span><UserAvatar name={task.assignee} small />{task.assignee}</span>
                       <span>{task.due}</span>
@@ -1564,6 +1567,7 @@ export default function App() {
           onClose={() => setEditing(null)}
           onSave={updateTask}
           onDelete={async task=>{await api.deleteTask(workspaceId,task.id);setEditing(null);await reload();toast.success(lang==='zh'?'任务已删除':'Task deleted')}}
+          onSubtasksChanged={reload}
           t={t}
         />
       ) : null}

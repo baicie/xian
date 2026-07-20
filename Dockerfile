@@ -3,6 +3,8 @@ RUN npm install --global pnpm@10.34.3
 
 FROM base AS build
 WORKDIR /app
+ARG APP_COMMIT=unknown
+ENV APP_COMMIT=$APP_COMMIT
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
