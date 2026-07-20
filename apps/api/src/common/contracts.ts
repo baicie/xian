@@ -30,12 +30,18 @@ export const documentCreateSchema = z.object({
   kind: documentKindSchema.default('DESIGN'),
   content: z.string().max(200000).default(''),
   projectId: z.string().uuid().nullable().default(null),
+  folderId: z.string().uuid().nullable().default(null),
 }).strict()
 export const documentUpdateSchema = documentCreateSchema.partial().extend({
   status: documentStatusSchema.optional(),
   changeNote: z.string().trim().max(300).default(''),
   version: z.number().int().positive(),
 }).strict()
+export const documentFolderCreateSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  parentId: z.string().uuid().nullable().default(null),
+}).strict()
+export const documentFolderUpdateSchema = documentFolderCreateSchema.partial().strict()
 export const planItemSchema = z.object({
   title: z.string().trim().min(1).max(300),
   description: z.string().max(20000).default(''),

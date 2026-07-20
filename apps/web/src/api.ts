@@ -1,8 +1,9 @@
 import type { Task } from './board'
 
 export type DocumentKind = 'ARCHITECTURE' | 'REQUIREMENT' | 'DESIGN' | 'MEETING' | 'RETROSPECTIVE'
-export type WorkspaceDocument = { id:string;projectId:string|null;title:string;kind:DocumentKind;status:'DRAFT'|'PUBLISHED'|'ARCHIVED';content:string;version:number;createdAt:string;updatedAt:string }
+export type WorkspaceDocument = { id:string;projectId:string|null;folderId:string|null;title:string;kind:DocumentKind;status:'DRAFT'|'PUBLISHED'|'ARCHIVED';content:string;version:number;createdAt:string;updatedAt:string }
 export type DocumentSummary = Omit<WorkspaceDocument,'content'|'createdAt'> & { projectName:string|null;updatedByName:string }
+export type DocumentFolder = {id:string;parentId:string|null;name:string;createdAt:string;updatedAt:string}
 export type PlanItem={id:string;position:number;title:string;description:string;kind:Task['kind'];priority:'HIGH'|'MEDIUM'|'LOW';taskId:string|null}
 export type ProjectPlan={id:string;projectId:string;title:string;goal:string;status:'DRAFT'|'APPLIED';source:string;version:number;items:PlanItem[];appliedAt:string|null;updatedAt:string}
 export type PlanSummary=Omit<ProjectPlan,'items'|'appliedAt'> & {projectName:string;itemCount:number}
@@ -65,9 +66,15 @@ export const api={
   previewTaskImport(workspaceId:string,file:File,projectId:string,mapping?:TaskWorkbookMapping){return uploadFields<TaskImportPreview>(`/workspaces/${workspaceId}/tasks/import/xlsx/preview`,file,{projectId,...(mapping?{mapping:JSON.stringify(mapping)}:{})})},
   importTasks(workspaceId:string,file:File,projectId:string,columnId:string,mapping:TaskWorkbookMapping){return uploadFields<{imported:number;invalidRows:number;duplicateRows:number;ignoredRows:number;sheetName:string}>(`/workspaces/${workspaceId}/tasks/import/xlsx`,file,{projectId,columnId,mapping:JSON.stringify(mapping)})},
   documents(workspaceId:string){return request<DocumentSummary[]>(`/workspaces/${workspaceId}/documents`)},
+  documentFolders(workspaceId:string){return request<DocumentFolder[]>(`/workspaces/${workspaceId}/documents/folders`)},
   document(workspaceId:string,documentId:string){return request<WorkspaceDocument>(`/workspaces/${workspaceId}/documents/${documentId}`)},
-  createDocument(workspaceId:string,input:{title:string;kind?:DocumentKind;projectId?:string|null;content?:string}){return request<WorkspaceDocument>(`/workspaces/${workspaceId}/documents`,{method:'POST',body:JSON.stringify(input)})},
-  updateDocument(workspaceId:string,documentId:string,input:Partial<Pick<WorkspaceDocument,'title'|'kind'|'status'|'content'|'projectId'>> & {version:number;changeNote?:string}){return request<WorkspaceDocument>(`/workspaces/${workspaceId}/documents/${documentId}`,{method:'PATCH',body:JSON.stringify(input)})},
+  createDocument(workspaceId:string,input:{title:string;kind?:DocumentKind;projectId?:string|null;folderId?:string|null;content?:string}){return request<WorkspaceDocument>(`/workspaces/${workspaceId}/documents`,{method:'POST',body:JSON.stringify(input)})},
+  updateDocument(workspaceId:string,documentId:string,input:Partial<Pick<WorkspaceDocument,'title'|'kind'|'status'|'content'|'projectId'|'folderId'>> & {version:number;changeNote?:string}){return request<WorkspaceDocument>(`/workspaces/${workspaceId}/documents/${documentId}`,{method:'PATCH',body:JSON.stringify(input)})},
+  duplicateDocument(workspaceId:string,documentId:string){return request<WorkspaceDocument>(`/workspaces/${workspaceId}/documents/${documentId}/duplicate`,{method:'POST'})},
+  deleteDocument(workspaceId:string,documentId:string){return request<{ok:true}>(`/workspaces/${workspaceId}/documents/${documentId}`,{method:'DELETE'})},
+  createDocumentFolder(workspaceId:string,input:{name:string;parentId?:string|null}){return request<DocumentFolder>(`/workspaces/${workspaceId}/documents/folders`,{method:'POST',body:JSON.stringify(input)})},
+  updateDocumentFolder(workspaceId:string,folderId:string,input:{name?:string;parentId?:string|null}){return request<DocumentFolder>(`/workspaces/${workspaceId}/documents/folders/${folderId}`,{method:'PATCH',body:JSON.stringify(input)})},
+  deleteDocumentFolder(workspaceId:string,folderId:string){return request<{ok:true}>(`/workspaces/${workspaceId}/documents/folders/${folderId}`,{method:'DELETE'})},
   documentVersions(workspaceId:string,documentId:string){return request<{id:string;version:number;title:string;status:WorkspaceDocument['status'];changeNote:string;createdAt:string;createdByName:string}[]>(`/workspaces/${workspaceId}/documents/${documentId}/versions`)},
   plans(workspaceId:string){return request<PlanSummary[]>(`/workspaces/${workspaceId}/plans`)},
   plan(workspaceId:string,planId:string){return request<ProjectPlan>(`/workspaces/${workspaceId}/plans/${planId}`)},

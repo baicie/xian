@@ -26,6 +26,7 @@ describe('document contracts', () => {
       kind: 'DESIGN',
       content: '',
       projectId: null,
+      folderId: null,
     })
   })
 
