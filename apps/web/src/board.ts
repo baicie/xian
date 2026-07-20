@@ -16,6 +16,8 @@ export type Task = {
   tags: string[]
   description: string
   version: number
+  subtaskDone?: number
+  subtaskTotal?: number
 }
 
 export const columns: { id: ColumnId; label: string; accent: string }[] = [

@@ -28,4 +28,4 @@ jobs:
       - run: pnpm --filter @xian/api test:integration
       - run: pnpm build
       - run: pnpm --registry=https://registry.npmjs.org audit --audit-level=high
-      - run: docker build -t xian:${{ github.sha }} .
+      - run: docker build --build-arg APP_COMMIT=${{ github.sha }} -t xian:${{ github.sha }} .

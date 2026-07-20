@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   CircleAlert,
   FolderKanban,
+  GitCommitHorizontal,
   Settings,
   UserPlus,
   Users,
@@ -246,6 +247,15 @@ export default function WorkspacePage({
               <small>
                 {projectCount} {en ? "projects" : "个项目"}
               </small>
+            </span>
+          </CardContent>
+        </Card>
+        <Card size="sm">
+          <CardContent>
+            <GitCommitHorizontal />
+            <span>
+              <strong>{en ? "Build version" : "构建版本"}</strong>
+              <small title={__APP_COMMIT__}>{__APP_COMMIT__==='unknown'?(en?'Unknown':'未知'):__APP_COMMIT__.slice(0,12)}</small>
             </span>
           </CardContent>
         </Card>
