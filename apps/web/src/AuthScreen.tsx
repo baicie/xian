@@ -1,6 +1,6 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { ArrowRight } from "lucide-react";
-import { api } from "./api";
+import { api, type AuthConfig } from "./api";
 import { Button } from "./components/ui/button";
 import {
   Field,
@@ -11,9 +11,27 @@ import {
 import { Input } from "./components/ui/input";
 
 export default function AuthScreen({ onReady }: { onReady: () => void }) {
-  const [mode, setMode] = useState<"login" | "register">("login"),
+  const [config, setConfig] = useState<AuthConfig | null>(null),
+    [mode, setMode] = useState<"login" | "register">("login"),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
+  const canRegister =
+    config?.registrationMode === "open" || config?.bootstrapAvailable === true;
+  useEffect(() => {
+    void api
+      .authConfig()
+      .then(setConfig)
+      .catch(() =>
+        setConfig({
+          registrationMode: "admin_only",
+          allowWorkspaceCreate: false,
+          bootstrapAvailable: false,
+        }),
+      );
+  }, []);
+  useEffect(() => {
+    if (config && !canRegister && mode === "register") setMode("login");
+  }, [canRegister, config, mode]);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
@@ -35,6 +53,10 @@ export default function AuthScreen({ onReady }: { onReady: () => void }) {
       setBusy(false);
     }
   }
+  const closedHint =
+    config?.registrationMode === "admin_only"
+      ? "当前实例仅支持管理员开通账号，请联系管理员获取设置链接。"
+      : "当前实例已关闭开放注册，请通过邀请链接加入工作区。";
   return (
     <main className="auth-page">
       <section className="auth-note">
@@ -51,7 +73,11 @@ export default function AuthScreen({ onReady }: { onReady: () => void }) {
           <span className="eyebrow">XIAN WORKSPACE</span>
           <h1>{mode === "login" ? "欢迎回来" : "创建你的工作区"}</h1>
           <p>
-            {mode === "login" ? "继续今天的工作。" : "几秒钟后即可开始协作。"}
+            {mode === "login"
+              ? "继续今天的工作。"
+              : config?.bootstrapAvailable
+                ? "首次部署，创建管理员账号与工作区。"
+                : "几秒钟后即可开始协作。"}
           </p>
         </div>
         <FieldGroup>
@@ -98,17 +124,23 @@ export default function AuthScreen({ onReady }: { onReady: () => void }) {
             {error ? <FieldError>{error}</FieldError> : null}
           </Field>
         </FieldGroup>
-      <Button type="submit" size="lg" disabled={busy}>
+        <Button type="submit" size="lg" disabled={busy || !config}>
           {busy ? "请稍候…" : mode === "login" ? "登录" : "注册并进入"}
           <ArrowRight data-icon="inline-end" />
         </Button>
-        <Button
-          type="button"
-          variant="link"
-          onClick={() => setMode(mode === "login" ? "register" : "login")}
-        >
-          {mode === "login" ? "还没有账号？创建工作区" : "已有账号？返回登录"}
-        </Button>
+        {canRegister ? (
+          <Button
+            type="button"
+            variant="link"
+            onClick={() => setMode(mode === "login" ? "register" : "login")}
+          >
+            {mode === "login"
+              ? "还没有账号？创建工作区"
+              : "已有账号？返回登录"}
+          </Button>
+        ) : config ? (
+          <p className="auth-closed-note">{closedHint}</p>
+        ) : null}
       </form>
     </main>
   );

@@ -16,20 +16,36 @@ export type Subtask={id:string;title:string;isDone:boolean;position:number}
 export type Asset={id:string;originalName:string;contentType:string;sizeBytes:number;sha256:string;createdAt:string;referenceCount:number;deduplicated?:boolean}
 export type TaskComment={id:string;body:string;status:'OPEN'|'RESOLVED';author:string;createdAt:string;assets:{id:string;name:string;contentType:string;sizeBytes:number}[]}
 export type Notification={id:number;title:string;body:string;action:string;taskId:string|null;isRead:boolean;createdAt:string;actorName:string|null;code:string|null;number:number|null;taskTitle:string|null}
+export type InvitationStatus='PENDING'|'ACCEPTED'|'EXPIRED'|'REVOKED'
+export type WorkspaceInvitation={id:string;email:string;role:string;status:InvitationStatus;expiresAt:string;acceptedAt:string|null;revokedAt:string|null;createdAt:string}
+export type AuditLog={id:string;action:string;entityType:string;entityId:string|null;beforeData:Record<string,unknown>|null;afterData:Record<string,unknown>|null;requestId:string;createdAt:string;actorName:string|null;actorEmail:string|null}
 type RawTask={id:string;number:number;projectId:string;columnId:string;title:string;description:string;kind:Task['kind'];priority:'HIGH'|'MEDIUM'|'LOW';dueDate:string|null;version:number;subtaskDone:number;subtaskTotal:number;assignees:{id:string;name:string}[];labels:string[]}
 
 const mapTask=(task:RawTask):Task=>({id:task.id,number:task.number,projectId:task.projectId,title:task.title,description:task.description,kind:task.kind,column:task.columnId,priority:{HIGH:'高',MEDIUM:'中',LOW:'低'}[task.priority] as Task['priority'],assignee:task.assignees[0]?.name??'未分配',assigneeId:task.assignees[0]?.id??'',due:task.dueDate??'',tags:task.labels,version:task.version,subtaskDone:task.subtaskDone,subtaskTotal:task.subtaskTotal})
 
 async function uploadFields<T>(path:string,file:File,fields:Record<string,string>){const body=new FormData();body.append('file',file);Object.entries(fields).forEach(([key,value])=>body.append(key,value));const response=await fetch('/api/v1'+path,{method:'POST',body,credentials:'include',headers:csrf?{'x-csrf-token':csrf}:{}});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||'上传失败');return data as T}
 
+export type RegistrationMode = 'open' | 'invite_only' | 'admin_only'
+export type AuthConfig = {
+  registrationMode: RegistrationMode
+  allowWorkspaceCreate: boolean
+  bootstrapAvailable: boolean
+}
+
 const base='/api/v1'
 let csrf=''
 async function request<T>(path:string,init:RequestInit={}){const response=await fetch(base+path,{...init,credentials:'include',headers:{'content-type':'application/json',...(csrf?{'x-csrf-token':csrf}:{}),...init.headers}}),text=await response.text();let data:any=null;try{data=text?JSON.parse(text):null}catch{data=null}if(!response.ok)throw new Error(data?.message||'请求失败');return data as T}
 async function upload<T>(path:string,file:File){const body=new FormData();body.append('file',file);const response=await fetch(base+path,{method:'POST',body,credentials:'include',headers:csrf?{'x-csrf-token':csrf}:{}});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||'上传失败');return data as T}
 export const api={
+  authConfig(){return request<AuthConfig>('/auth/config')},
   async me(){const data=await request<{user:{id:string;name:string};csrfToken:string}>('/auth/me');csrf=data.csrfToken;return data},
   async login(email:string,password:string){const data=await request<{user:{id:string;name:string};csrfToken:string}>('/auth/login',{method:'POST',body:JSON.stringify({email,password})});csrf=data.csrfToken;return data},
   register(input:{email:string;name:string;password:string;workspaceName:string}){return request('/auth/register',{method:'POST',body:JSON.stringify(input)})},
+  previewInvite(token:string){return request<{workspaceName:string;email:string;role:string;expired:boolean;revoked:boolean;accepted:boolean;usable:boolean}>(`/invites/${encodeURIComponent(token)}`)},
+  async registerInvite(input:{token:string;name:string;password:string}){const data=await request<{user:{id:string;name:string};csrfToken:string;workspace:{id:string;name:string}}>('/auth/register/invite',{method:'POST',body:JSON.stringify(input)});csrf=data.csrfToken;return data},
+  acceptInvite(token:string){return request<{ok:true;workspace:{id:string;name:string}}>('/auth/accept-invite',{method:'POST',body:JSON.stringify({token})})},
+  previewSetup(token:string){return request<{email:string;name:string;expired:boolean;used:boolean;usable:boolean}>(`/auth/setup/${encodeURIComponent(token)}`)},
+  async completeSetup(token:string,password:string){const data=await request<{user:{id:string;name:string};csrfToken:string}>('/auth/setup',{method:'POST',body:JSON.stringify({token,password})});csrf=data.csrfToken;return data},
   logout(){return request('/auth/logout',{method:'POST'})},
   workspaces(){return request<{id:string;name:string;slug:string;role:string}[]>('/workspaces')},
   createWorkspace(name:string){return request<{id:string;name:string;slug:string}>('/workspaces',{method:'POST',body:JSON.stringify({name})})},
@@ -43,7 +59,11 @@ export const api={
   notifications(workspaceId:string){return request<{items:Notification[];unread:number}>(`/notifications?workspaceId=${encodeURIComponent(workspaceId)}`)},
   readNotifications(ids:number[]=[]){return request<{ok:true}>('/notifications/read',{method:'POST',body:JSON.stringify({ids})})},
   members(workspaceId:string){return request<{id:string;name:string;email:string;role:string;disabledAt:string|null}[]>(`/workspaces/${workspaceId}/members`)},
-  addMember(workspaceId:string,input:{email:string;role:'ADMIN'|'MEMBER'|'VIEWER'}){return request(`/workspaces/${workspaceId}/members`,{method:'POST',body:JSON.stringify(input)})},
+  addMember(workspaceId:string,input:{email:string;role:'ADMIN'|'MEMBER'|'VIEWER'}){return request<{ok:true;added?:true;invited?:true;invitation?:{id:string;email:string;role:string;expiresAt:string;inviteUrl:string}}>(`/workspaces/${workspaceId}/members`,{method:'POST',body:JSON.stringify(input)})},
+  provisionMember(workspaceId:string,input:{email:string;name:string;role:'ADMIN'|'MEMBER'|'VIEWER'}){return request<{ok:true;added?:true;provisioned?:true;setupUrl?:string;user?:{id:string;email:string;name:string;role:string}}>(`/workspaces/${workspaceId}/members/provision`,{method:'POST',body:JSON.stringify(input)})},
+  invitations(workspaceId:string){return request<WorkspaceInvitation[]>(`/workspaces/${workspaceId}/invitations`)},
+  revokeInvitation(workspaceId:string,invitationId:string){return request<{ok:true}>(`/workspaces/${workspaceId}/invitations/${invitationId}`,{method:'DELETE'})},
+  auditLogs(workspaceId:string){return request<AuditLog[]>(`/workspaces/${workspaceId}/audit-logs`)},
   createTask(workspaceId:string,task:Task){return request(`/workspaces/${workspaceId}/tasks`,{method:'POST',body:JSON.stringify({projectId:task.projectId,columnId:task.column,title:task.title,description:task.description,kind:task.kind,priority:{高:'HIGH',中:'MEDIUM',低:'LOW'}[task.priority],assigneeIds:task.assigneeId?[task.assigneeId]:[],dueDate:task.due||null,labels:task.tags})})},
   updateTask(workspaceId:string,task:Task){return request<{id:string;version:number}>(`/workspaces/${workspaceId}/tasks/${task.id}`,{method:'PATCH',body:JSON.stringify({title:task.title,description:task.description,kind:task.kind,columnId:task.column,priority:{高:'HIGH',中:'MEDIUM',低:'LOW'}[task.priority],assigneeIds:task.assigneeId?[task.assigneeId]:[],dueDate:task.due||null,labels:task.tags,version:task.version})})},
   bulkUpdateTasks(workspaceId:string,taskIds:string[],action:TaskBulkAction){return request<{updated:number}>(`/workspaces/${workspaceId}/tasks/bulk`,{method:'PATCH',body:JSON.stringify({taskIds,action})})},

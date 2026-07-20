@@ -10,6 +10,7 @@ import {
   Database,
   FolderKanban,
   GitCommitHorizontal,
+  History,
   Plug,
   Settings,
   UserPlus,
@@ -17,7 +18,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Task } from "./board";
-import { api, type Notification } from "./api";
+import { api, type AuthConfig, type Notification } from "./api";
 import ChoiceSelect from "./components/ChoiceSelect";
 import { Avatar, AvatarFallback } from "./components/ui/avatar";
 import { Badge } from "./components/ui/badge";
@@ -58,6 +59,7 @@ import McpTokensPanel from "./features/settings/McpTokensPanel";
 import TransferPanel from "./features/settings/TransferPanel";
 import GitHubPanel from "./features/settings/GitHubPanel";
 import AssetsPanel from "./features/settings/AssetsPanel";
+import AuditLogPanel from "./features/settings/AuditLogPanel";
 
 const DocumentsPage = lazy(() => import("./features/documents/DocumentsPage"));
 const PlansPage = lazy(() => import("./features/plans/PlansPage"));
@@ -105,16 +107,36 @@ export default function WorkspacePage({
     [mine, setMine] = useState<Task[]>([]),
     [notifications, setNotifications] = useState<{items:Notification[];unread:number}>({items:[],unread:0}),
     [error, setError] = useState(""),
-    [adding, setAdding] = useState(false);
+    [adding, setAdding] = useState(false),
+    [provisioning, setProvisioning] = useState(false),
+    [invitations, setInvitations] = useState<
+      Awaited<ReturnType<typeof api.invitations>>
+    >([]),
+    [registrationConfig, setRegistrationConfig] = useState<AuthConfig | null>(
+      null,
+    );
   const en = lang === "en",
-    loadMembers = () =>
-      api
-        .members(workspaceId)
-        .then(setMembers)
-        .catch((reason) => setError(reason.message));
+    canManage = workspaceRole === "OWNER" || workspaceRole === "ADMIN",
+    loadMemberData = async () => {
+      setError("");
+      try {
+        setMembers(await api.members(workspaceId));
+        if (!canManage) return;
+        const [invites, config] = await Promise.all([
+          api.invitations(workspaceId),
+          registrationConfig
+            ? Promise.resolve(registrationConfig)
+            : api.authConfig(),
+        ]);
+        setInvitations(invites);
+        if (!registrationConfig) setRegistrationConfig(config);
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : en ? "Unable to load members" : "无法加载成员");
+      }
+    };
   useEffect(() => {
-    if (page === "members") void loadMembers();
-    if (page === "archived")
+    if (page === "members") void loadMemberData();
+    if (page === "archived" && projectId)
       api
         .tasks(workspaceId, projectId, true)
         .then(setArchived)
@@ -191,10 +213,19 @@ export default function WorkspacePage({
             en ? "Workspace members and permissions" : "工作区成员与权限"
           }
           action={
-            <Button onClick={() => setAdding(true)}>
-              <UserPlus data-icon="inline-start" />
-              {en ? "Add member" : "添加成员"}
-            </Button>
+            canManage ? (
+              <span className="title-actions">
+                {registrationConfig?.registrationMode !== "open" ? (
+                  <Button variant="outline" onClick={() => setProvisioning(true)}>
+                    {en ? "Provision account" : "开通账号"}
+                  </Button>
+                ) : null}
+                <Button onClick={() => setAdding(true)}>
+                  <UserPlus data-icon="inline-start" />
+                  {en ? "Invite member" : "邀请成员"}
+                </Button>
+              </span>
+            ) : null
           }
         >
           {members.length ? (
@@ -220,6 +251,45 @@ export default function WorkspacePage({
               text={error || (en ? "No members" : "暂无成员")}
             />
           )}
+          {canManage && invitations.length ? (
+            <div className="member-list invitation-list">
+              <p className="nav-label">{en ? "Invitations" : "邀请记录"}</p>
+              {invitations.map((invite) => {
+                const status = {
+                  PENDING: en ? "Pending" : "待接受",
+                  ACCEPTED: en ? "Accepted" : "已接受",
+                  EXPIRED: en ? "Expired" : "已过期",
+                  REVOKED: en ? "Revoked" : "已撤销",
+                }[invite.status];
+                return (
+                  <Card size="sm" key={invite.id}>
+                    <CardContent>
+                      <span>
+                        <strong>{invite.email}</strong>
+                        <small>
+                          {invite.role} · {status}
+                        </small>
+                      </span>
+                      {invite.status === "PENDING" ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void api.revokeInvitation(workspaceId, invite.id)
+                            .then(() => loadMemberData())
+                            .then(() => toast.success(en ? "Invite revoked" : "邀请已撤销"))
+                            .catch((reason) => toast.error(reason instanceof Error ? reason.message : en ? "Unable to revoke invite" : "无法撤销邀请"))}
+                        >
+                          {en ? "Revoke" : "撤销"}
+                        </Button>
+                      ) : (
+                        <Badge variant="secondary">{status}</Badge>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          ) : null}
         </PageShell>
         <AddMemberDialog
           open={adding}
@@ -227,8 +297,18 @@ export default function WorkspacePage({
           workspaceId={workspaceId}
           en={en}
           onAdded={async () => {
-            await loadMembers();
-            toast.success(en ? "Member added" : "成员已添加");
+            await loadMemberData();
+            toast.success(en ? "Member updated" : "成员已更新");
+          }}
+        />
+        <ProvisionMemberDialog
+          open={provisioning}
+          onOpenChange={setProvisioning}
+          workspaceId={workspaceId}
+          en={en}
+          onProvisioned={async () => {
+            await loadMemberData();
+            toast.success(en ? "Account provisioned" : "账号已开通");
           }}
         />
       </>
@@ -243,6 +323,7 @@ export default function WorkspacePage({
         <TabsList variant="line" aria-label={en ? "Settings sections" : "设置分类"}>
           <TabsTrigger value="overview"><Settings />{en ? "Overview" : "概览"}</TabsTrigger>
           {canAdminister ? <TabsTrigger value="integrations"><Plug />{en ? "Integrations" : "集成"}</TabsTrigger> : null}
+          {canAdminister ? <TabsTrigger value="audit"><History />{en ? "Audit" : "审计日志"}</TabsTrigger> : null}
           <TabsTrigger value="data"><Database />{en ? "Data" : "数据"}</TabsTrigger>
         </TabsList>
         <TabsContent value="overview">
@@ -253,12 +334,125 @@ export default function WorkspacePage({
           </div>
         </TabsContent>
         {canAdminister ? <TabsContent value="integrations" className="settings-tab-panels"><McpTokensPanel workspaceId={workspaceId} en={en} /><GitHubPanel workspaceId={workspaceId} projects={projects} en={en} onTasksChanged={onTasksChanged} /></TabsContent> : null}
+        {canAdminister ? <TabsContent value="audit"><AuditLogPanel workspaceId={workspaceId} en={en} /></TabsContent> : null}
         <TabsContent value="data" className="settings-tab-panels">
           {canAdminister ? <AssetsPanel workspaceId={workspaceId} en={en} /> : null}
           <TransferPanel workspaceId={workspaceId} en={en} onRestored={onWorkspaceRestored} />
         </TabsContent>
       </Tabs>
     </PageShell>
+  );
+}
+
+function ProvisionMemberDialog({
+  open,
+  onOpenChange,
+  workspaceId,
+  en,
+  onProvisioned,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  workspaceId: string;
+  en: boolean;
+  onProvisioned: () => Promise<void>;
+}) {
+  const [role, setRole] = useState<Role>("MEMBER"),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState(""),
+    [setupUrl, setSetupUrl] = useState("");
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    setSetupUrl("");
+    const values = Object.fromEntries(new FormData(event.currentTarget));
+    try {
+      const result = await api.provisionMember(workspaceId, {
+        email: String(values.email),
+        name: String(values.name),
+        role,
+      });
+      if (result.setupUrl) {
+        setSetupUrl(result.setupUrl);
+        await onProvisioned();
+        return;
+      }
+      await onProvisioned();
+      onOpenChange(false);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : en ? "Failed" : "开通失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <form onSubmit={submit}>
+          <DialogHeader>
+            <DialogTitle>{en ? "Provision account" : "管理员开通账号"}</DialogTitle>
+            <DialogDescription>
+              {en
+                ? "Create an account without self-registration and share the setup link."
+                : "无需对方自助注册，直接创建账号并生成密码设置链接。"}
+            </DialogDescription>
+          </DialogHeader>
+          {setupUrl ? (
+            <FieldGroup className="member-form">
+              <Field>
+                <FieldLabel>{en ? "Setup link" : "设置链接"}</FieldLabel>
+                <Input readOnly value={setupUrl} />
+              </Field>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                  {en ? "Close" : "关闭"}
+                </Button>
+                <Button type="button" onClick={() => void navigator.clipboard.writeText(setupUrl)}>
+                  {en ? "Copy link" : "复制链接"}
+                </Button>
+              </DialogFooter>
+            </FieldGroup>
+          ) : (
+            <>
+              <FieldGroup className="member-form">
+                <Field>
+                  <FieldLabel htmlFor="provision-name">{en ? "Name" : "姓名"}</FieldLabel>
+                  <Input id="provision-name" name="name" required maxLength={80} />
+                </Field>
+                <Field data-invalid={Boolean(error)}>
+                  <FieldLabel htmlFor="provision-email">{en ? "Email" : "邮箱"}</FieldLabel>
+                  <Input id="provision-email" name="email" type="email" required />
+                  {error ? <FieldError>{error}</FieldError> : null}
+                </Field>
+                <Field>
+                  <FieldLabel>{en ? "Role" : "角色"}</FieldLabel>
+                  <ChoiceSelect
+                    label={en ? "Role" : "角色"}
+                    value={role}
+                    options={[
+                      { value: "ADMIN", label: en ? "Admin" : "管理员" },
+                      { value: "MEMBER", label: en ? "Member" : "成员" },
+                      { value: "VIEWER", label: en ? "Viewer" : "只读" },
+                    ]}
+                    onChange={setRole}
+                    className="choice-select"
+                  />
+                </Field>
+              </FieldGroup>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                  {en ? "Cancel" : "取消"}
+                </Button>
+                <Button type="submit" disabled={busy}>
+                  {busy ? (en ? "Creating…" : "创建中…") : en ? "Create account" : "创建账号"}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -277,14 +471,21 @@ function AddMemberDialog({
 }) {
   const [role, setRole] = useState<Role>("MEMBER"),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [inviteUrl, setInviteUrl] = useState("");
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setBusy(true);
     setError("");
+    setInviteUrl("");
     const email = String(new FormData(event.currentTarget).get("email"));
     try {
-      await api.addMember(workspaceId, { email, role });
+      const result = await api.addMember(workspaceId, { email, role });
+      if (result.invited && result.invitation?.inviteUrl) {
+        setInviteUrl(result.invitation.inviteUrl);
+        await onAdded();
+        return;
+      }
       await onAdded();
       onOpenChange(false);
     } catch (reason) {
@@ -292,12 +493,16 @@ function AddMemberDialog({
         reason instanceof Error
           ? reason.message
           : en
-            ? "Failed to add member"
-            : "添加失败",
+            ? "Failed to invite member"
+            : "邀请失败",
       );
     } finally {
       setBusy(false);
     }
+  };
+  const copyInvite = async () => {
+    if (!inviteUrl) return;
+    await navigator.clipboard.writeText(inviteUrl);
   };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -305,14 +510,36 @@ function AddMemberDialog({
         <form onSubmit={submit}>
           <DialogHeader>
             <DialogTitle>
-              {en ? "Add workspace member" : "添加工作区成员"}
+              {en ? "Invite workspace member" : "邀请工作区成员"}
             </DialogTitle>
             <DialogDescription>
               {en
-                ? "The user must register first. Add them by account email and assign a role."
-                : "成员需先自行注册账号，再通过注册邮箱加入并分配角色。"}
+                ? "Enter an email to add an existing account or send an invite link."
+                : "输入邮箱即可添加已有账号，或为未注册用户生成邀请链接。"}
             </DialogDescription>
           </DialogHeader>
+          {inviteUrl ? (
+            <FieldGroup className="member-form">
+              <Field>
+                <FieldLabel>{en ? "Invite link" : "邀请链接"}</FieldLabel>
+                <Input readOnly value={inviteUrl} />
+                <FieldDescription>
+                  {en
+                    ? "Share this link with the invitee. It expires in 7 days."
+                    : "请将此链接发送给对方，7 天内有效。"}
+                </FieldDescription>
+              </Field>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                  {en ? "Close" : "关闭"}
+                </Button>
+                <Button type="button" onClick={() => void copyInvite()}>
+                  {en ? "Copy link" : "复制链接"}
+                </Button>
+              </DialogFooter>
+            </FieldGroup>
+          ) : (
+            <>
           <FieldGroup className="member-form">
             <Field data-invalid={Boolean(error)}>
               <FieldLabel htmlFor="member-email">
@@ -328,8 +555,8 @@ function AddMemberDialog({
               />
               <FieldDescription>
                 {en
-                  ? "Use the email linked to their account."
-                  : "请输入成员注册账号时使用的邮箱。"}
+                  ? "Existing users are added immediately; others receive an invite link."
+                  : "已有账号将直接加入；未注册邮箱会生成邀请链接。"}
               </FieldDescription>
               {error ? <FieldError>{error}</FieldError> : null}
             </Field>
@@ -359,13 +586,15 @@ function AddMemberDialog({
             <Button type="submit" disabled={busy}>
               {busy
                 ? en
-                  ? "Adding…"
-                  : "添加中…"
+                  ? "Inviting…"
+                  : "邀请中…"
                 : en
-                  ? "Add member"
-                  : "添加成员"}
+                  ? "Send invite"
+                  : "发送邀请"}
             </Button>
           </DialogFooter>
+            </>
+          )}
         </form>
       </DialogContent>
     </Dialog>

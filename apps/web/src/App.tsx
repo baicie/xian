@@ -33,15 +33,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import {
-  Navigate,
-  NavLink,
-  Route,
-  Routes,
-  useLocation,
-  useNavigate,
-  useSearchParams,
-} from "react-router-dom";
+import { matchPath, Navigate, NavLink, Route, Routes, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ColumnId,
   Priority,
@@ -52,6 +44,8 @@ import {
 } from "./board";
 import { api, type GitHubReference, type TaskColumnRole, type TaskImportPreview, type TaskWorkbookMapping } from "./api";
 import AuthScreen from "./AuthScreen";
+import InviteScreen from "./InviteScreen";
+import SetupScreen from "./SetupScreen";
 import ChoiceSelect from "./components/ChoiceSelect";
 import {
   appPaths,
@@ -1327,12 +1321,17 @@ export default function App() {
     }
   };
   if (auth === "loading") return <main className="boot">正在连接工作区…</main>;
-  if (auth === "out")
+  const inviteToken = matchPath(appPaths.invitePattern, location.pathname)?.params.token;
+  const setupToken = matchPath(appPaths.setupPattern, location.pathname)?.params.token;
+  if (auth === "out") {
+    if (inviteToken) return <InviteScreen token={decodeURIComponent(inviteToken)} onReady={() => void boot()} />;
+    if (setupToken) return <SetupScreen token={decodeURIComponent(setupToken)} onReady={() => void boot()} />;
     return location.pathname === appPaths.login ? (
       <AuthScreen onReady={() => void boot()} />
     ) : (
       <Navigate to={appPaths.login} replace />
     );
+  }
   if (location.pathname === appPaths.login)
     return <Navigate to={appPaths.home} replace />;
   const sidebar = (
@@ -1410,14 +1409,9 @@ export default function App() {
             </Button>
           ) : null}
         </header>
-        {!project ? (
-          <section className="boot">
-            <Button onClick={() => setCreating("project")}>
-              {t.createFirst}
-            </Button>
-          </section>
-        ) : (
         <Routes>
+          {project ? (
+          <>
           <Route
             index
             element={<Navigate to={appPaths.project(project.id)} replace />}
@@ -1617,13 +1611,27 @@ export default function App() {
             )}
           </>
           } />
+          </>
+          ) : (
+          <>
+            <Route index element={
+              <section className="boot">
+                <Button onClick={() => setCreating("project")}>
+                  {t.createFirst}
+                </Button>
+              </section>
+            } />
+            <Route path={appPaths.legacyTasks.slice(1)} element={<Navigate to={appPaths.home} replace />} />
+            <Route path={appPaths.projectPattern.slice(1)} element={<Navigate to={appPaths.home} replace />} />
+          </>
+          )}
           {workspacePageRoutes.map((nextPage) => (
             <Route key={nextPage} path={nextPage} element={
           <Suspense fallback={<section className="boot">{lang === "zh" ? "正在加载工作区…" : "Loading workspace…"}</section>}><WorkspacePage
             page={nextPage}
             tasks={tasks}
             workspaceId={workspaceId}
-            projectId={project.id}
+            projectId={project?.id ?? ""}
             projectCount={projects.length}
             user={user}
             lang={lang}
@@ -1639,7 +1647,6 @@ export default function App() {
           ))}
           <Route path="*" element={<Navigate to={appPaths.home} replace />} />
         </Routes>
-        )}
       </SidebarInset>
       {project ? (
         <TaskDialog

@@ -26,3 +26,16 @@
 镜像使用 commit SHA 标识。部署后会检查数据库就绪状态和首页；检查失败时发布脚本会重新启动上一镜像。数据库迁移必须保持向后兼容，删除字段等破坏性迁移应拆成多个版本发布。
 
 生产环境应设置 `PERF_APP_ORIGIN` 为 HTTPS 公网地址，并通过反向代理终止 TLS。数据库密码和应用加密密钥由部署主机持久保存，禁止写入仓库或日志。
+
+## 访问控制
+
+生产私有实例建议设置：
+
+```dotenv
+AUTH_REGISTRATION_MODE=admin_only
+AUTH_ALLOW_WORKSPACE_CREATE=false
+```
+
+空数据库仍允许首位管理员 bootstrap。完成后，`admin_only` 只允许管理员在成员页开通账号；生成的 setup link 为一次性链接，7 天后过期。`invite_only` 使用相同有效期的工作区邀请链接。链接只在创建时返回明文，数据库仅保存 SHA-256 摘要。
+
+认证模式值无效时系统按 `admin_only` 处理，避免配置拼写错误意外开放注册。部署后应检查 `/api/v1/auth/config` 返回的 `registrationMode` 和 `bootstrapAvailable`。

@@ -16,6 +16,10 @@ export type WorkspacePageRoute = (typeof workspacePageRoutes)[number];
 export const appPaths = {
   home: "/",
   login: "/login",
+  invitePattern: "/invite/:token",
+  setupPattern: "/setup/:token",
+  invite: (token: string) => `/invite/${encodeURIComponent(token)}`,
+  setup: (token: string) => `/setup/${encodeURIComponent(token)}`,
   legacyTasks: "/tasks",
   projectPattern: "/projects/:projectId",
   project: (projectId: string) =>
