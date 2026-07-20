@@ -2,12 +2,13 @@ import { createHash } from 'node:crypto'
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
 import { z } from 'zod'
 import { ASSET_MAX_FILE_BYTES, ASSET_WORKSPACE_QUOTA_BYTES, detectAssetType, SUPPORTED_ASSET_CONTENT_TYPES } from './asset-types.js'
+import { taskTypeFieldsSchema } from '../common/contracts.js'
 
 const date=z.string()
 const member=z.object({email:z.string().email(),name:z.string(),role:z.enum(['OWNER','ADMIN','MEMBER','VIEWER'])})
 const comment=z.object({body:z.string(),authorEmail:z.string().email(),createdAt:date,status:z.enum(['OPEN','RESOLVED']).default('OPEN'),assetSourceIds:z.array(z.string().uuid()).default([])})
 const checklist=z.object({title:z.string(),isDone:z.boolean(),position:z.number()})
-const task=z.object({sourceId:z.string().uuid(),columnSourceId:z.string().uuid(),number:z.number().int(),title:z.string(),description:z.string(),kind:z.enum(['TASK','STORY','BUG']),priority:z.enum(['HIGH','MEDIUM','LOW']),dueDate:z.string().nullable(),position:z.number(),version:z.number().int(),archived:z.boolean(),assigneeEmails:z.array(z.string().email()),labels:z.array(z.string()),checklist:z.array(checklist),comments:z.array(comment)})
+const task=z.object({sourceId:z.string().uuid(),columnSourceId:z.string().uuid(),number:z.number().int(),title:z.string(),description:z.string(),kind:z.enum(['TASK','STORY','BUG']),typeFields:taskTypeFieldsSchema.default(taskTypeFieldsSchema.parse({})),priority:z.enum(['HIGH','MEDIUM','LOW']),dueDate:z.string().nullable(),position:z.number(),version:z.number().int(),archived:z.boolean(),assigneeEmails:z.array(z.string().email()),labels:z.array(z.string()),checklist:z.array(checklist),comments:z.array(comment)})
 const column=z.object({sourceId:z.string().uuid(),name:z.string(),color:z.string(),position:z.number()})
 const project=z.object({sourceId:z.string().uuid(),name:z.string(),code:z.string(),description:z.string(),color:z.string(),archived:z.boolean(),columns:z.array(column),tasks:z.array(task)})
 const documentVersion=z.object({version:z.number().int(),title:z.string(),kind:z.enum(['ARCHITECTURE','REQUIREMENT','DESIGN','MEETING','RETROSPECTIVE']),status:z.enum(['DRAFT','PUBLISHED','ARCHIVED']),content:z.string(),changeNote:z.string(),createdAt:date})

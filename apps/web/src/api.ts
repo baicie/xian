@@ -1,4 +1,5 @@
 import type { Task } from './board'
+import { createTaskTypeFields, type TaskTypeFields } from './taskFields'
 
 export type DocumentKind = 'ARCHITECTURE' | 'REQUIREMENT' | 'DESIGN' | 'MEETING' | 'RETROSPECTIVE'
 export type WorkspaceDocument = { id:string;projectId:string|null;folderId:string|null;title:string;kind:DocumentKind;status:'DRAFT'|'PUBLISHED'|'ARCHIVED';content:string;version:number;createdAt:string;updatedAt:string }
@@ -19,9 +20,9 @@ export type Notification={id:number;title:string;body:string;action:string;taskI
 export type InvitationStatus='PENDING'|'ACCEPTED'|'EXPIRED'|'REVOKED'
 export type WorkspaceInvitation={id:string;email:string;role:string;status:InvitationStatus;expiresAt:string;acceptedAt:string|null;revokedAt:string|null;createdAt:string}
 export type AuditLog={id:string;action:string;entityType:string;entityId:string|null;beforeData:Record<string,unknown>|null;afterData:Record<string,unknown>|null;requestId:string;createdAt:string;actorName:string|null;actorEmail:string|null}
-type RawTask={id:string;number:number;projectId:string;columnId:string;title:string;description:string;kind:Task['kind'];priority:'HIGH'|'MEDIUM'|'LOW';dueDate:string|null;version:number;subtaskDone:number;subtaskTotal:number;assignees:{id:string;name:string}[];labels:string[]}
+type RawTask={id:string;number:number;projectId:string;columnId:string;title:string;description:string;kind:Task['kind'];typeFields:Partial<TaskTypeFields>;priority:'HIGH'|'MEDIUM'|'LOW';dueDate:string|null;version:number;subtaskDone:number;subtaskTotal:number;assignees:{id:string;name:string}[];labels:string[]}
 
-const mapTask=(task:RawTask):Task=>({id:task.id,number:task.number,projectId:task.projectId,title:task.title,description:task.description,kind:task.kind,column:task.columnId,priority:{HIGH:'高',MEDIUM:'中',LOW:'低'}[task.priority] as Task['priority'],assignee:task.assignees[0]?.name??'未分配',assigneeId:task.assignees[0]?.id??'',due:task.dueDate??'',tags:task.labels,version:task.version,subtaskDone:task.subtaskDone,subtaskTotal:task.subtaskTotal})
+const mapTask=(task:RawTask):Task=>({id:task.id,number:task.number,projectId:task.projectId,title:task.title,description:task.description,kind:task.kind,column:task.columnId,priority:{HIGH:'高',MEDIUM:'中',LOW:'低'}[task.priority] as Task['priority'],assignee:task.assignees[0]?.name??'未分配',assigneeId:task.assignees[0]?.id??'',due:task.dueDate??'',tags:task.labels,typeFields:{...createTaskTypeFields(),...task.typeFields},version:task.version,subtaskDone:task.subtaskDone,subtaskTotal:task.subtaskTotal})
 
 async function uploadFields<T>(path:string,file:File,fields:Record<string,string>){const body=new FormData();body.append('file',file);Object.entries(fields).forEach(([key,value])=>body.append(key,value));const response=await fetch('/api/v1'+path,{method:'POST',body,credentials:'include',headers:csrf?{'x-csrf-token':csrf}:{}});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.message||'上传失败');return data as T}
 
@@ -64,8 +65,8 @@ export const api={
   invitations(workspaceId:string){return request<WorkspaceInvitation[]>(`/workspaces/${workspaceId}/invitations`)},
   revokeInvitation(workspaceId:string,invitationId:string){return request<{ok:true}>(`/workspaces/${workspaceId}/invitations/${invitationId}`,{method:'DELETE'})},
   auditLogs(workspaceId:string){return request<AuditLog[]>(`/workspaces/${workspaceId}/audit-logs`)},
-  createTask(workspaceId:string,task:Task){return request(`/workspaces/${workspaceId}/tasks`,{method:'POST',body:JSON.stringify({projectId:task.projectId,columnId:task.column,title:task.title,description:task.description,kind:task.kind,priority:{高:'HIGH',中:'MEDIUM',低:'LOW'}[task.priority],assigneeIds:task.assigneeId?[task.assigneeId]:[],dueDate:task.due||null,labels:task.tags})})},
-  updateTask(workspaceId:string,task:Task){return request<{id:string;version:number}>(`/workspaces/${workspaceId}/tasks/${task.id}`,{method:'PATCH',body:JSON.stringify({title:task.title,description:task.description,kind:task.kind,columnId:task.column,priority:{高:'HIGH',中:'MEDIUM',低:'LOW'}[task.priority],assigneeIds:task.assigneeId?[task.assigneeId]:[],dueDate:task.due||null,labels:task.tags,version:task.version})})},
+  createTask(workspaceId:string,task:Task){return request(`/workspaces/${workspaceId}/tasks`,{method:'POST',body:JSON.stringify({projectId:task.projectId,columnId:task.column,title:task.title,description:task.description,kind:task.kind,typeFields:task.typeFields,priority:{高:'HIGH',中:'MEDIUM',低:'LOW'}[task.priority],assigneeIds:task.assigneeId?[task.assigneeId]:[],dueDate:task.due||null,labels:task.tags})})},
+  updateTask(workspaceId:string,task:Task){return request<{id:string;version:number}>(`/workspaces/${workspaceId}/tasks/${task.id}`,{method:'PATCH',body:JSON.stringify({title:task.title,description:task.description,kind:task.kind,typeFields:task.typeFields,columnId:task.column,priority:{高:'HIGH',中:'MEDIUM',低:'LOW'}[task.priority],assigneeIds:task.assigneeId?[task.assigneeId]:[],dueDate:task.due||null,labels:task.tags,version:task.version})})},
   bulkUpdateTasks(workspaceId:string,taskIds:string[],action:TaskBulkAction){return request<{updated:number}>(`/workspaces/${workspaceId}/tasks/bulk`,{method:'PATCH',body:JSON.stringify({taskIds,action})})},
   deleteTask(workspaceId:string,taskId:string){return request<{ok:true}>(`/workspaces/${workspaceId}/tasks/${taskId}`,{method:'DELETE'})},
   taskWatch(workspaceId:string,taskId:string){return request<{watching:boolean}>(`/workspaces/${workspaceId}/tasks/${taskId}/watch`)},

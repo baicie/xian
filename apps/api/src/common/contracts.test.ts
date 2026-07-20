@@ -8,6 +8,14 @@ describe('task type contract',()=>{
     expect(taskSchema.parse({...base,kind:'BUG'}).kind).toBe('BUG')
   })
   it('does not inject create defaults into partial updates',()=>expect(taskPatchSchema.parse({version:1})).toEqual({version:1}))
+  it('normalizes type-specific fields without breaking old clients',()=>{
+    expect(taskSchema.parse(base).typeFields).toMatchObject({severity:'MAJOR'})
+    expect(taskSchema.parse({...base,kind:'BUG',typeFields:{reproductionSteps:'1. 打开登录页',expectedResult:'成功登录',actualResult:'提示服务异常',environment:'Chrome 126',severity:'CRITICAL',affectedVersion:'1.8.0'}}).typeFields).toMatchObject({severity:'CRITICAL',affectedVersion:'1.8.0'})
+  })
+  it('rejects unknown or oversized type-specific fields',()=>{
+    expect(taskSchema.safeParse({...base,typeFields:{unexpected:'value'}}).success).toBe(false)
+    expect(taskPatchSchema.safeParse({version:1,typeFields:{actualResult:'x'.repeat(10001)}}).success).toBe(false)
+  })
   it('accepts bulk priority and type actions and rejects duplicate task ids',()=>{const id='33333333-3333-4333-8333-333333333333';expect(taskBulkSchema.parse({taskIds:[id],action:{type:'PRIORITY',priority:'HIGH'}}).action.type).toBe('PRIORITY');expect(taskBulkSchema.parse({taskIds:[id],action:{type:'KIND',kind:'BUG'}}).action).toEqual({type:'KIND',kind:'BUG'});expect(taskBulkSchema.safeParse({taskIds:[id,id],action:{type:'DELETE'}}).success).toBe(false)})
 })
 

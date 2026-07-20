@@ -9,10 +9,24 @@ export const loginSchema = z.object({ email: z.string().email(), password: z.str
 export const workspaceSchema = z.object({ name: z.string().trim().min(1).max(80) }).strict()
 export const memberSchema = z.object({ email: z.string().email(), role: z.enum(['ADMIN','MEMBER','VIEWER']) }).strict()
 export const projectSchema = z.object({ name: z.string().trim().min(1).max(120), code: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{2,8}$/), description: z.string().max(4000).default(''), color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#2367d1') }).strict()
-export const taskSchema = z.object({ projectId: z.string().uuid(), columnId: z.string().uuid(), title: z.string().trim().min(1).max(300), description: z.string().max(20000).default(''), kind: z.enum(['TASK','STORY','BUG']).default('TASK'), priority: z.enum(['HIGH','MEDIUM','LOW']).default('MEDIUM'), assigneeIds: z.array(z.string().uuid()).max(20).default([]), dueDate: z.string().date().nullable().default(null), labels: z.array(z.string().trim().min(1).max(40)).max(20).default([]) }).strict()
+export const taskTypeFieldsSchema = z.object({
+  workContent: z.string().max(20000).default(''),
+  completionCriteria: z.string().max(10000).default(''),
+  userStory: z.string().max(10000).default(''),
+  background: z.string().max(20000).default(''),
+  acceptanceCriteria: z.string().max(10000).default(''),
+  businessValue: z.string().max(10000).default(''),
+  reproductionSteps: z.string().max(10000).default(''),
+  expectedResult: z.string().max(10000).default(''),
+  actualResult: z.string().max(10000).default(''),
+  environment: z.string().max(2000).default(''),
+  severity: z.enum(['BLOCKER','CRITICAL','MAJOR','MINOR']).default('MAJOR'),
+  affectedVersion: z.string().max(100).default(''),
+}).strict()
+export const taskSchema = z.object({ projectId: z.string().uuid(), columnId: z.string().uuid(), title: z.string().trim().min(1).max(300), description: z.string().max(20000).default(''), kind: z.enum(['TASK','STORY','BUG']).default('TASK'), typeFields: taskTypeFieldsSchema.default(taskTypeFieldsSchema.parse({})), priority: z.enum(['HIGH','MEDIUM','LOW']).default('MEDIUM'), assigneeIds: z.array(z.string().uuid()).max(20).default([]), dueDate: z.string().date().nullable().default(null), labels: z.array(z.string().trim().min(1).max(40)).max(20).default([]) }).strict()
 export const taskPatchSchema = z.object({
   columnId: z.string().uuid().optional(), title: z.string().trim().min(1).max(300).optional(), description: z.string().max(20000).optional(),
-  kind: z.enum(['TASK','STORY','BUG']).optional(), priority: z.enum(['HIGH','MEDIUM','LOW']).optional(), assigneeIds: z.array(z.string().uuid()).max(20).optional(),
+  kind: z.enum(['TASK','STORY','BUG']).optional(), typeFields: taskTypeFieldsSchema.optional(), priority: z.enum(['HIGH','MEDIUM','LOW']).optional(), assigneeIds: z.array(z.string().uuid()).max(20).optional(),
   dueDate: z.string().date().nullable().optional(), labels: z.array(z.string().trim().min(1).max(40)).max(20).optional(), version: z.number().int().positive(),
 }).strict()
 const bulkTaskIds = z.array(z.string().uuid()).min(1).max(100).refine(ids => new Set(ids).size === ids.length, 'taskIds must be unique')
