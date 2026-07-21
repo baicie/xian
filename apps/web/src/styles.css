@@ -3210,6 +3210,9 @@ h1 {
   color: var(--muted);
   font-size: 9px;
 }
+.asset-quota-control > button {
+  justify-self: start;
+}
 @media (max-width: 620px) {
   .quick-entry {
     margin-inline: 14px;
