@@ -1354,13 +1354,22 @@ h1 {
   gap: 6px;
   margin-top: 9px;
 }
-.comment-attachments a {
+.comment-attachments > a,
+.comment-attachments > button {
   min-width: 0;
+  height: auto;
+  padding: 0;
   display: grid;
+  justify-content: stretch;
   gap: 3px;
   color: var(--muted);
+  background: transparent;
   text-decoration: none;
   font-size: 9px;
+  text-align: left;
+}
+.comment-attachments > button {
+  cursor: zoom-in;
 }
 .comment-attachments .is-image img {
   width: 100%;
@@ -1381,8 +1390,7 @@ h1 {
   width: 20px;
 }
 .comment-attachments b,
-.asset-file-icon b,
-.pending-file b {
+.asset-file-icon b {
   font-size: 8px;
   letter-spacing: 0;
 }
@@ -1403,50 +1411,6 @@ h1 {
 .comment-actions > [data-slot='select-trigger'] {
   width: 112px;
   margin-left: auto;
-}
-.pending-assets {
-  display: flex;
-  gap: 6px;
-  overflow: auto;
-}
-.pending-assets > span {
-  width: 72px;
-  height: 58px;
-  position: relative;
-  flex: 0 0 auto;
-  border: 1px solid var(--line);
-}
-.pending-assets img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.pending-assets .pending-file {
-  display: grid;
-  place-items: center;
-  align-content: center;
-  gap: 2px;
-  background: var(--ui-muted);
-}
-.pending-assets .pending-file > svg {
-  width: 18px;
-  color: var(--muted);
-}
-.pending-assets small {
-  position: absolute;
-  left: 2px;
-  bottom: 2px;
-  padding: 1px 3px;
-  color: white;
-  background: rgba(0, 0, 0, 0.65);
-  font-size: 8px;
-}
-.pending-assets button {
-  position: absolute;
-  right: 1px;
-  top: 1px;
-  color: white;
-  background: rgba(0, 0, 0, 0.6);
 }
 .task-import-dialog {
   width: min(860px, calc(100vw - 24px)) !important;
@@ -2090,12 +2054,21 @@ h1 {
   width: 44px;
 }
 .asset-name {
+  width: 100%;
+  height: auto;
+  padding: 0;
   min-width: 0;
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 9px;
   color: inherit;
+  background: transparent;
   text-decoration: none;
+  text-align: left;
+}
+.asset-name[data-slot='dialog-trigger'] {
+  cursor: zoom-in;
 }
 .asset-name img,
 .asset-file-icon {
@@ -2140,6 +2113,16 @@ h1 {
 }
 .asset-loading [data-slot='skeleton'] {
   height: 44px;
+}
+.asset-preview-dialog {
+  width: min(960px, calc(100vw - 32px)) !important;
+  max-width: 960px !important;
+}
+.asset-preview-dialog > img {
+  width: 100%;
+  max-height: calc(100vh - 190px);
+  object-fit: contain;
+  background: var(--ui-muted);
 }
 .github-connection {
   min-height: 56px;

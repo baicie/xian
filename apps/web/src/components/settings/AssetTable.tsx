@@ -1,6 +1,7 @@
 import { type Dispatch, type SetStateAction, useMemo } from 'react'
 import { FileText, Trash2 } from 'lucide-react'
 import { api, type Asset } from '@/api'
+import AssetPreview from '@/components/AssetPreview'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -106,11 +107,15 @@ export default function AssetTable({
                 />
               </TableCell>
               <TableCell>
-                <a
+                <AssetPreview
                   className="asset-name"
-                  href={api.assetUrl(workspaceId, asset.id)}
-                  target="_blank"
-                  rel="noreferrer"
+                  workspaceId={workspaceId}
+                  asset={{
+                    id: asset.id,
+                    name: asset.originalName,
+                    contentType: asset.contentType,
+                  }}
+                  en={en}
                 >
                   {isPreviewableAsset(asset.contentType) ? (
                     <img src={api.assetUrl(workspaceId, asset.id)} alt="" />
@@ -124,7 +129,7 @@ export default function AssetTable({
                     <strong>{asset.originalName}</strong>
                     <small>{asset.contentType}</small>
                   </span>
-                </a>
+                </AssetPreview>
               </TableCell>
               <TableCell>{formatAssetSize(asset.sizeBytes)}</TableCell>
               <TableCell>{date.format(new Date(asset.createdAt))}</TableCell>

@@ -1,14 +1,13 @@
 import { ChangeEvent, useCallback, useEffect, useRef, useState } from 'react'
-import { CheckCircle2, FileText, MessageSquare, Paperclip, RotateCcw, Send, X } from 'lucide-react'
+import { CheckCircle2, FileText, MessageSquare, Paperclip, RotateCcw, Send } from 'lucide-react'
 import { toast } from 'sonner'
-import { api, type Asset, type TaskComment } from '@/api'
+import { api, type TaskComment } from '@/api'
+import AssetPreview from '@/components/AssetPreview'
 import ChoiceSelect from '@/components/ChoiceSelect'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { assetAccept, assetExtension, isPreviewableAsset } from '@/lib/assets'
-
-const size = (bytes: number) =>
-  bytes < 1024 * 1024 ? `${Math.ceil(bytes / 1024)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`
+import { attachFilesToTask } from '@/lib/taskAssets'
 
 export default function TaskComments({
   workspaceId,
@@ -20,9 +19,7 @@ export default function TaskComments({
   en: boolean
 }) {
   const input = useRef<HTMLInputElement>(null),
-    pendingRef = useRef<Asset[]>([]),
     [comments, setComments] = useState<TaskComment[]>([]),
-    [pending, setPending] = useState<Asset[]>([]),
     [body, setBody] = useState(''),
     [status, setStatus] = useState<'OPEN' | 'RESOLVED'>('OPEN'),
     [busy, setBusy] = useState(false)
@@ -37,37 +34,20 @@ export default function TaskComments({
   useEffect(() => {
     void load()
   }, [load])
-  useEffect(() => {
-    pendingRef.current = pending
-  }, [pending])
-  useEffect(
-    () => () => {
-      for (const asset of pendingRef.current)
-        if (!asset.deduplicated) void api.deleteAsset(workspaceId, asset.id).catch(() => undefined)
-    },
-    [workspaceId, taskId],
-  )
   const upload = async (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? []).slice(0, Math.max(0, 12 - pending.length))
+    const files = Array.from(event.target.files ?? []).slice(0, 12)
     if (!files.length) return
     setBusy(true)
     try {
-      const uploaded: Asset[] = []
-      for (const file of files) uploaded.push(await api.uploadAsset(workspaceId, file))
-      setPending((current) => [
-        ...current,
-        ...uploaded.filter((next) => !current.some((item) => item.id === next.id)),
-      ])
+      await attachFilesToTask(workspaceId, taskId, files, status, en)
+      await load()
+      toast.success(en ? 'Attachments uploaded' : '附件已上传')
     } catch (reason) {
       toast.error(reason instanceof Error ? reason.message : '附件上传失败')
     } finally {
       setBusy(false)
       event.target.value = ''
     }
-  }
-  const removePending = async (asset: Asset) => {
-    setPending((current) => current.filter((item) => item.id !== asset.id))
-    if (!asset.deduplicated) await api.deleteAsset(workspaceId, asset.id).catch(() => undefined)
   }
   const submit = async () => {
     if (!body.trim()) return
@@ -76,10 +56,8 @@ export default function TaskComments({
       await api.createTaskComment(workspaceId, taskId, {
         body: body.trim(),
         status,
-        assetIds: pending.map((item) => item.id),
+        assetIds: [],
       })
-      pendingRef.current = []
-      setPending([])
       setBody('')
       setStatus('OPEN')
       await load()
@@ -142,12 +120,12 @@ export default function TaskComments({
               {comment.assets.length ? (
                 <div className="comment-attachments">
                   {comment.assets.map((asset) => (
-                    <a
+                    <AssetPreview
                       className={isPreviewableAsset(asset.contentType) ? 'is-image' : 'is-file'}
                       key={asset.id}
-                      href={api.assetUrl(workspaceId, asset.id)}
-                      target="_blank"
-                      rel="noreferrer"
+                      workspaceId={workspaceId}
+                      asset={{ id: asset.id, name: asset.name, contentType: asset.contentType }}
+                      en={en}
                     >
                       {isPreviewableAsset(asset.contentType) ? (
                         <img src={api.assetUrl(workspaceId, asset.id)} alt={asset.name} />
@@ -158,7 +136,7 @@ export default function TaskComments({
                         </span>
                       )}
                       <small>{asset.name}</small>
-                    </a>
+                    </AssetPreview>
                   ))}
                 </div>
               ) : null}
@@ -177,35 +155,6 @@ export default function TaskComments({
             en ? 'Describe what remains or confirm the fix…' : '说明仍需修复的问题，或确认已修复…'
           }
         />
-        {pending.length ? (
-          <div className="pending-assets">
-            {pending.map((asset) => (
-              <span
-                className={isPreviewableAsset(asset.contentType) ? '' : 'pending-file'}
-                key={asset.id}
-              >
-                {isPreviewableAsset(asset.contentType) ? (
-                  <img src={api.assetUrl(workspaceId, asset.id)} alt="" />
-                ) : (
-                  <>
-                    <FileText />
-                    <b>{assetExtension(asset.originalName)}</b>
-                  </>
-                )}
-                <small>{size(asset.sizeBytes)}</small>
-                <Button
-                  type="button"
-                  size="icon-xs"
-                  variant="ghost"
-                  aria-label={en ? 'Remove attachment' : '移除附件'}
-                  onClick={() => void removePending(asset)}
-                >
-                  <X />
-                </Button>
-              </span>
-            ))}
-          </div>
-        ) : null}
         <div className="comment-actions">
           <input
             ref={input}
