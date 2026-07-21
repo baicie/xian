@@ -17,8 +17,14 @@ import {
   Users,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useLocation, useNavigate } from 'react-router-dom'
 import type { Task } from '@/models/board'
 import { api, type AuthConfig, type Notification } from '@/api'
+import {
+  appPaths,
+  getSettingsSectionFromPath,
+  type SettingsSection,
+} from '@/app/routes'
 import ChoiceSelect from '@/components/ChoiceSelect'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -127,6 +133,13 @@ export default function WorkspacePage({
         )
       }
     }, [workspaceId, canManage, registrationConfig, en])
+  const location = useLocation(),
+    navigate = useNavigate(),
+    requestedSettingsSection = getSettingsSectionFromPath(location.pathname),
+    settingsSection =
+      canManage || requestedSettingsSection === 'overview' || requestedSettingsSection === 'data'
+        ? requestedSettingsSection
+        : 'overview'
   useEffect(() => {
     if (page === 'members') void loadMemberData()
     if (page === 'archived' && projectId)
@@ -394,8 +407,15 @@ export default function WorkspacePage({
       title={en ? 'Settings' : '设置'}
       subtitle={en ? 'Workspace preferences and account' : '工作区偏好与账户'}
     >
-      <Tabs defaultValue="overview" className="settings-tabs">
-        <TabsList variant="line" aria-label={en ? 'Settings sections' : '设置分类'}>
+      <Tabs
+        orientation="vertical"
+        value={settingsSection}
+        onValueChange={(section) =>
+          navigate(appPaths.settingsSection(section as SettingsSection))
+        }
+        className="settings-tabs"
+      >
+        <TabsList aria-label={en ? 'Settings sections' : '设置分类'}>
           <TabsTrigger value="overview">
             <Settings />
             {en ? 'Overview' : '概览'}
@@ -410,6 +430,12 @@ export default function WorkspacePage({
             <TabsTrigger value="audit">
               <History />
               {en ? 'Audit' : '审计日志'}
+            </TabsTrigger>
+          ) : null}
+          {canAdminister ? (
+            <TabsTrigger value="assets">
+              <Database />
+              {en ? 'Resources' : '静态资源'}
             </TabsTrigger>
           ) : null}
           <TabsTrigger value="data">
@@ -472,8 +498,12 @@ export default function WorkspacePage({
             <AuditLogPanel workspaceId={workspaceId} en={en} />
           </TabsContent>
         ) : null}
+        {canAdminister ? (
+          <TabsContent value="assets">
+            <AssetsPanel workspaceId={workspaceId} en={en} />
+          </TabsContent>
+        ) : null}
         <TabsContent value="data" className="settings-tab-panels">
-          {canAdminister ? <AssetsPanel workspaceId={workspaceId} en={en} /> : null}
           <TransferPanel workspaceId={workspaceId} en={en} onRestored={onWorkspaceRestored} />
         </TabsContent>
       </Tabs>

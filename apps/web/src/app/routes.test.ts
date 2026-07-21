@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { appPaths, getProjectIdFromPath, isProjectPath, workspacePageRoutes } from './routes'
+import {
+  appPaths,
+  getProjectIdFromPath,
+  getSettingsSectionFromPath,
+  isProjectPath,
+  settingsSections,
+  workspacePageRoutes,
+} from './routes'
 
 describe('application routes', () => {
   it('builds stable project URLs', () => {
@@ -30,5 +37,13 @@ describe('application routes', () => {
       'members',
       'settings',
     ])
+  })
+
+  it('builds and parses route-managed settings sections', () => {
+    expect(appPaths.settingsSection('assets')).toBe('/settings/assets')
+    expect(getSettingsSectionFromPath('/settings/integrations')).toBe('integrations')
+    expect(getSettingsSectionFromPath('/settings')).toBe('overview')
+    expect(getSettingsSectionFromPath('/settings/unknown')).toBe('overview')
+    expect(settingsSections).toContain('assets')
   })
 })

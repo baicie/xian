@@ -1007,6 +1007,7 @@ h1 {
   width: 100%;
   min-width: 700px;
   min-height: 56px;
+  padding-inline: 10px;
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
   align-items: center;
@@ -1835,21 +1836,22 @@ h1 {
 .settings-tabs {
   min-width: 0;
   margin-top: 24px;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  align-items: start;
+  gap: 24px;
 }
 .settings-tabs > [data-slot='tabs-list'] {
   width: 100%;
   max-width: 100%;
+  padding: 6px;
+  align-items: stretch;
   justify-content: flex-start;
-  border-bottom: 1px solid var(--line);
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.settings-tabs > [data-slot='tabs-list']::-webkit-scrollbar {
-  display: none;
+  border: 1px solid var(--line);
 }
 .settings-tabs [data-slot='tabs-trigger'] {
-  min-width: 110px;
+  min-width: 0;
+  padding: 8px 10px;
 }
 .settings-tabs [data-slot='tabs-content'] {
   min-width: 0;
@@ -3253,6 +3255,18 @@ h1 {
   }
 }
 @media (max-width: 620px) {
+  .settings-tabs {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+  .settings-tabs > [data-slot='tabs-list'] {
+    flex-direction: row;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .settings-tabs > [data-slot='tabs-list']::-webkit-scrollbar {
+    display: none;
+  }
   .settings-tabs [data-slot='tabs-trigger'] {
     min-width: 96px;
   }

@@ -13,6 +13,10 @@ export const workspacePageRoutes = [
 
 export type WorkspacePageRoute = (typeof workspacePageRoutes)[number]
 
+export const settingsSections = ['overview', 'integrations', 'audit', 'assets', 'data'] as const
+
+export type SettingsSection = (typeof settingsSections)[number]
+
 export const appPaths = {
   home: '/',
   login: '/login',
@@ -31,7 +35,13 @@ export const appPaths = {
   archived: '/archived',
   members: '/members',
   settings: '/settings',
+  settingsSection: (section: SettingsSection) => `/settings/${section}`,
 } as const
+
+export function getSettingsSectionFromPath(pathname: string): SettingsSection {
+  const section = matchPath('/settings/:section', pathname)?.params.section
+  return settingsSections.find((item) => item === section) ?? 'overview'
+}
 
 export function getProjectIdFromPath(pathname: string) {
   const projectId = matchPath(appPaths.projectPattern, pathname)?.params.projectId

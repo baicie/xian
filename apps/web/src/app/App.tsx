@@ -2475,7 +2475,7 @@ export default function App() {
           {workspacePageRoutes.map((nextPage) => (
             <Route
               key={nextPage}
-              path={nextPage}
+              path={nextPage === 'settings' ? 'settings/*' : nextPage}
               element={
                 <Suspense
                   fallback={
