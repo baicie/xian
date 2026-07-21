@@ -34,7 +34,8 @@ export default function AssetsPanel({ workspaceId, en }: { workspaceId: string; 
     [assets, setAssets] = useState<Asset[]>([]),
     [usage, setUsage] = useState({ usedBytes: 0, quotaBytes: 1 }),
     [quotaMb, setQuotaMb] = useState(1024),
-    [pendingDelete, setPendingDelete] = useState<string | null>(null),
+    [selected, setSelected] = useState<string[]>([]),
+    [pendingDelete, setPendingDelete] = useState<string[]>([]),
     [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false)
   const load = useCallback(async () => {
@@ -43,6 +44,11 @@ export default function AssetsPanel({ workspaceId, en }: { workspaceId: string; 
       setAssets(result.assets)
       setUsage(result.usage)
       setQuotaMb(Math.round(result.usage.quotaBytes / 1024 / 1024))
+      setSelected((current) =>
+        current.filter((id) =>
+          result.assets.some((asset) => asset.id === id && asset.referenceCount === 0),
+        ),
+      )
     } catch (reason) {
       toast.error(reason instanceof Error ? reason.message : '资源加载失败')
     } finally {
@@ -76,15 +82,15 @@ export default function AssetsPanel({ workspaceId, en }: { workspaceId: string; 
     }
   }
   const remove = async () => {
-    if (!pendingDelete) return
+    if (!pendingDelete.length) return
     setBusy(true)
     try {
-      await api.deleteAsset(workspaceId, pendingDelete)
-      toast.success(en ? 'Resource deleted' : '资源已删除')
+      await Promise.all(pendingDelete.map((id) => api.deleteAsset(workspaceId, id)))
+      toast.success(en ? 'Resources deleted' : '资源已删除')
     } catch (reason) {
       toast.error(reason instanceof Error ? reason.message : '删除失败')
     } finally {
-      setPendingDelete(null)
+      setPendingDelete([])
       await load()
       setBusy(false)
     }
@@ -176,6 +182,8 @@ export default function AssetsPanel({ workspaceId, en }: { workspaceId: string; 
           {assets.length ? (
             <AssetTable
               assets={assets}
+              selected={selected}
+              setSelected={setSelected}
               busy={busy}
               workspaceId={workspaceId}
               en={en}
@@ -206,14 +214,16 @@ export default function AssetsPanel({ workspaceId, en }: { workspaceId: string; 
         </CardContent>
       </Card>
       <AlertDialog
-        open={pendingDelete !== null}
-        onOpenChange={(open) => !open && setPendingDelete(null)}
+        open={pendingDelete.length > 0}
+        onOpenChange={(open) => !open && setPendingDelete([])}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{en ? 'Delete resource?' : '删除静态资源？'}</AlertDialogTitle>
+            <AlertDialogTitle>{en ? 'Delete resources?' : '删除静态资源？'}</AlertDialogTitle>
             <AlertDialogDescription>
-              {en ? 'This file will be permanently deleted.' : '将永久删除此文件，此操作无法撤销。'}
+              {en
+                ? `${pendingDelete.length} selected file(s) will be permanently deleted.`
+                : `将永久删除选中的 ${pendingDelete.length} 个文件，此操作无法撤销。`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

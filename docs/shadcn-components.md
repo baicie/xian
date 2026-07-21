@@ -22,6 +22,7 @@ The following components are currently installed in `apps/web/src/components/ui`
 - input-group
 - kbd
 - label
+- pagination
 - progress
 - resizable
 - scroll-area

@@ -2114,6 +2114,14 @@ h1 {
 .asset-loading [data-slot='skeleton'] {
   height: 44px;
 }
+.asset-table + [data-slot='pagination'] {
+  margin-top: 12px;
+}
+.asset-page-count {
+  padding-inline: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
 .asset-preview-dialog {
   width: min(960px, calc(100vw - 32px)) !important;
   max-width: 960px !important;
