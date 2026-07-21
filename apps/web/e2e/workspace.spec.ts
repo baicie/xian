@@ -34,7 +34,7 @@ test('opens the document context menu at the pointer position', async ({ page })
       '/api/v1/workspaces/workspace-1/projects': [],
       '/api/v1/workspaces/workspace-1/members': [{ id: 'user-1', name: '测试用户', email: 'test@example.com', role: 'OWNER', disabledAt: null }],
       '/api/v1/workspaces/workspace-1/documents': [],
-      '/api/v1/workspaces/workspace-1/documents/folders': [],
+      '/api/v1/workspaces/workspace-1/documents/folders': [{ id: 'folder-1', parentId: null, name: '测试文件夹', createdAt: '2026-07-21T00:00:00.000Z', updatedAt: '2026-07-21T00:00:00.000Z' }],
       '/api/v1/auth/config': { registrationMode: 'admin_only', allowWorkspaceCreate: true, bootstrapAvailable: false },
     }
     const body = responses[pathname]
@@ -51,16 +51,21 @@ test('opens the document context menu at the pointer position', async ({ page })
     await Promise.all(element.getAnimations().map(animation => animation.finished))
   })
 
-  const documentList = page.locator('.document-list')
-  const listBox = await documentList.boundingBox()
-  expect(listBox).not.toBeNull()
-  const position = { x: 80, y: 120 }
-  await documentList.click({ button: 'right', position })
+  const folder = page.locator('.folder-row').filter({ hasText: '测试文件夹' })
+  const folderBox = await folder.boundingBox()
+  expect(folderBox).not.toBeNull()
+  const position = { x: 80, y: 20 }
+  await folder.click({ button: 'right', position })
 
-  const menuBox = await page.getByRole('menu').boundingBox()
+  const menu = page.getByRole('menu')
+  await expect(menu.getByRole('menuitem', { name: '重命名' })).toBeVisible()
+  const menuBox = await menu.boundingBox()
   expect(menuBox).not.toBeNull()
-  expect(menuBox!.x).toBeCloseTo(listBox!.x + position.x, 0)
-  expect(menuBox!.y).toBeCloseTo(listBox!.y + position.y, 0)
+  expect(menuBox!.x).toBeCloseTo(folderBox!.x + position.x, 0)
+  expect(menuBox!.y).toBeCloseTo(folderBox!.y + position.y + 4, 0)
+
+  await menu.getByRole('menuitem', { name: '删除' }).click()
+  await expect(page.getByRole('alertdialog').getByRole('heading', { name: '确认删除' })).toBeVisible()
 })
 
 test('opens task card actions from the context menu', async ({ page }) => {

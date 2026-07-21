@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react'
 import { ArrowRight, GitCommitHorizontal, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
-import type { Task } from '../../board'
-import { api } from '../../api'
-import { transitionsForTask, workflowActionLabel, type WorkflowColumn, type WorkflowTransition } from '../../workflow'
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../../components/ui/alert-dialog'
-import { Badge } from '../../components/ui/badge'
-import { Button } from '../../components/ui/button'
-import { Field, FieldLabel } from '../../components/ui/field'
-import { Textarea } from '../../components/ui/textarea'
+import type { Task } from '@/models/board'
+import { api } from '@/api'
+import { transitionsForTask, workflowActionLabel, type WorkflowColumn, type WorkflowTransition } from '@/models/workflow'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Field, FieldLabel } from '@/components/ui/field'
+import { Textarea } from '@/components/ui/textarea'
 
 export default function TaskWorkflow({workspaceId,task,columns,transitions,en,onTransition}:{workspaceId:string;task:Task;columns:WorkflowColumn[];transitions:WorkflowTransition[];en:boolean;onTransition:(transition:WorkflowTransition,comment:string)=>Promise<void>}){
   const [history,setHistory]=useState<Awaited<ReturnType<typeof api.taskTransitions>>>([]),[pending,setPending]=useState<WorkflowTransition|null>(null),[reason,setReason]=useState(''),[busy,setBusy]=useState(false)

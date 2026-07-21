@@ -32,7 +32,12 @@ Extend 闲序 with model-facing project planning, versioned design documents, po
 
 - `apps/api/src/modules/` — documents, plans, exports, GitHub, and MCP application boundaries.
 - `apps/api/src/database/migrations/` — additive PostgreSQL migrations.
-- `apps/web/src/features/` — focused document, plan, integration, and transfer pages.
+- `apps/web/src/pages/` — route-level document and planning screens.
+- `apps/web/src/components/` — reusable document, settings, and task UI components.
+- `apps/web/src/lib/` — non-UI helpers such as the document cache.
+- `apps/web/src/app/` — application shell and route definitions.
+- `apps/web/src/api/` — API client and transport contracts.
+- `apps/web/src/models/` — pure domain models and their tests.
 - `apps/web/src/components/ui/` — shadcn and Plate registry source.
 - `docs/specs/` — product and interface specifications.
 

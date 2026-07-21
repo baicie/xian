@@ -1,6 +1,6 @@
-import type { Task } from './board'
-import { createTaskTypeFields, type TaskTypeFields } from './taskFields'
-import type { ProjectWorkflow, TaskTransitionEvent, WorkflowTemplateKey } from './workflow'
+import type { Task } from '@/models/board'
+import { createTaskTypeFields, type TaskTypeFields } from '@/models/taskFields'
+import type { ProjectWorkflow, TaskTransitionEvent, WorkflowTemplateKey } from '@/models/workflow'
 
 export type DocumentKind = 'ARCHITECTURE' | 'REQUIREMENT' | 'DESIGN' | 'MEETING' | 'RETROSPECTIVE'
 export type WorkspaceDocument = { id:string;projectId:string|null;folderId:string|null;title:string;kind:DocumentKind;status:'DRAFT'|'PUBLISHED'|'ARCHIVED';content:string;version:number;createdAt:string;updatedAt:string }
