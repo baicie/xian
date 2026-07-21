@@ -150,10 +150,10 @@ import {
   BreadcrumbSeparator,
 } from "./components/ui/breadcrumb";
 import { ToggleGroup, ToggleGroupItem } from "./components/ui/toggle-group";
-import TaskComments from "./tasks/TaskComments";
-import TaskSubtasks from "./tasks/TaskSubtasks";
-import TaskTypeFieldsEditor from "./tasks/TaskTypeFields";
-import TaskWorkflow from "./tasks/TaskWorkflow";
+import TaskComments from "./components/tasks/TaskComments";
+import TaskSubtasks from "./components/tasks/TaskSubtasks";
+import TaskTypeFieldsEditor from "./components/tasks/TaskTypeFields";
+import TaskWorkflow from "./components/tasks/TaskWorkflow";
 import { commonTransitionTargets, transitionsForTask, workflowTemplateOptions, type WorkflowColumn, type WorkflowTemplateKey, type WorkflowTransition } from "./workflow";
 
 type Lang = "zh" | "en";

@@ -16,9 +16,9 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { loadDocumentOnce, readDocumentCache, removeCachedDocument, writeDocumentCache } from './documentCache'
+import { loadDocumentOnce, readDocumentCache, removeCachedDocument, writeDocumentCache } from '@/lib/documentCache'
 
-const MarkdownEditor = lazy(() => import('./MarkdownEditor'))
+const MarkdownEditor = lazy(() => import('@/components/documents/MarkdownEditor'))
 const kinds:DocumentKind[]=['DESIGN','ARCHITECTURE','REQUIREMENT','MEETING','RETROSPECTIVE']
 const zhKind:Record<DocumentKind,string>={DESIGN:'设计',ARCHITECTURE:'架构',REQUIREMENT:'需求',MEETING:'会议',RETROSPECTIVE:'复盘'}
 type Project={id:string;name:string}

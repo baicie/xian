@@ -55,14 +55,14 @@ import {
 } from "./components/ui/field";
 import { Input } from "./components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
-import McpTokensPanel from "./settings/McpTokensPanel";
-import TransferPanel from "./settings/TransferPanel";
-import GitHubPanel from "./settings/GitHubPanel";
-import AssetsPanel from "./settings/AssetsPanel";
-import AuditLogPanel from "./settings/AuditLogPanel";
+import McpTokensPanel from "./components/settings/McpTokensPanel";
+import TransferPanel from "./components/settings/TransferPanel";
+import GitHubPanel from "./components/settings/GitHubPanel";
+import AssetsPanel from "./components/settings/AssetsPanel";
+import AuditLogPanel from "./components/settings/AuditLogPanel";
 
-const DocumentsPage = lazy(() => import("./documents/DocumentsPage"));
-const PlansPage = lazy(() => import("./plans/PlansPage"));
+const DocumentsPage = lazy(() => import("./pages/DocumentsPage"));
+const PlansPage = lazy(() => import("./pages/PlansPage"));
 
 export type Page =
   "overview" | "inbox" | "tasks" | "calendar" | "plans" | "documents" | "archived" | "members" | "settings";

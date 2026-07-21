@@ -13,6 +13,7 @@
 
 ## Frontend Structure
 
-- Put business modules directly under `apps/web/src/<domain>` such as `src/documents`, `src/tasks`, `src/settings`, and `src/plans`.
-- Do not introduce a generic `src/features` directory. It adds nesting without defining an architectural boundary in this project.
-- Keep reusable cross-domain composition in `src/components` and shadcn primitives in `src/components/ui`.
+- Organize frontend code by technical responsibility: route-level screens in `apps/web/src/pages`, reusable React composition in `apps/web/src/components`, non-UI helpers and caches in `apps/web/src/lib`, hooks in `apps/web/src/hooks`, and API access in `apps/web/src/api.ts`.
+- Group related reusable components below `src/components/<area>` when useful, but do not mix pages, API code, state helpers, and UI components in one domain directory.
+- Do not introduce a generic `src/features` directory or top-level domain folders that combine multiple technical responsibilities.
+- Keep shadcn primitives in `src/components/ui`.

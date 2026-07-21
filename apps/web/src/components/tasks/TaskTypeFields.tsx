@@ -1,9 +1,9 @@
-import type { TaskKind } from '../board'
-import type { BugSeverity, TaskTypeFields } from '../taskFields'
-import ChoiceSelect from '../components/ChoiceSelect'
-import { Field, FieldGroup, FieldLabel } from '../components/ui/field'
-import { Input } from '../components/ui/input'
-import { Textarea } from '../components/ui/textarea'
+import type { TaskKind } from '@/board'
+import type { BugSeverity, TaskTypeFields } from '@/taskFields'
+import ChoiceSelect from '@/components/ChoiceSelect'
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 
 type Props={kind:TaskKind;value:TaskTypeFields;en:boolean;onChange:(value:TaskTypeFields)=>void}
 
