@@ -26,6 +26,7 @@ import {
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Toggle } from '@/components/ui/toggle'
+import { copyText } from '@/lib/clipboard'
 
 export default function McpTokensPanel({ workspaceId, en }: { workspaceId: string; en: boolean }) {
   const [tokens, setTokens] = useState<Awaited<ReturnType<typeof api.mcpTokens>>>([]),
@@ -59,9 +60,9 @@ export default function McpTokensPanel({ workspaceId, en }: { workspaceId: strin
             variant="outline"
             size="sm"
             onClick={() =>
-              void navigator.clipboard
-                .writeText(`${location.origin}/mcp`)
+              void copyText(`${location.origin}/mcp`)
                 .then(() => toast.success(en ? 'Copied' : '已复制'))
+                .catch(() => toast.error(en ? 'Copy failed' : '复制失败，请手动复制'))
             }
           >
             <Copy data-icon="inline-start" />
@@ -127,9 +128,9 @@ export default function McpTokensPanel({ workspaceId, en }: { workspaceId: strin
             <Input readOnly value={created} />
             <Button
               onClick={() =>
-                void navigator.clipboard
-                  .writeText(created)
+                void copyText(created)
                   .then(() => toast.success(en ? 'Token copied' : '令牌已复制'))
+                  .catch(() => toast.error(en ? 'Copy failed' : '复制失败，请手动复制'))
               }
             >
               <Copy data-icon="inline-start" />
