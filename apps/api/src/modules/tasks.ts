@@ -1,11 +1,13 @@
 import { BadRequestException, Body, ConflictException, Controller, Delete, Get, Injectable, NotFoundException, Param, Patch, Post, Put, Query, Req, UploadedFile, UseInterceptors } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
 import { z } from 'zod'
+import type { Sql, TransactionSql } from 'postgres'
 import { DatabaseService } from '../database/database.service.js'
-import { commentSchema, taskBulkSchema, taskPatchSchema, taskSchema } from '../common/contracts.js'
+import { commentSchema, taskBulkSchema, taskPatchSchema, taskSchema, taskTransitionSchema } from '../common/contracts.js'
 import { AppRequest, parse } from '../common/http.js'
 import { WorkspaceService } from './workspaces.js'
 import { analyzeTaskWorkbook, normalizeTaskTitle, type TaskWorkbookMapping } from './task-xlsx.js'
+import { resolveTransition, WorkflowTransitionError, type StoredTransition } from './workflows.js'
 
 const listSchema=z.object({projectId:z.string().uuid().optional(),query:z.string().max(200).optional(),priority:z.enum(['HIGH','MEDIUM','LOW']).optional(),kind:z.enum(['TASK','STORY','BUG']).optional(),mine:z.preprocess(value=>value==='true',z.boolean()).default(false),archived:z.preprocess(value=>value==='true',z.boolean()).default(false),page:z.coerce.number().int().min(1).default(1),pageSize:z.coerce.number().int().min(1).max(100).default(50)})
 const workbookMappingSchema=z.object({titleColumn:z.number().int().min(0).max(49),descriptionColumns:z.array(z.number().int().min(0).max(49)).max(48),kindColumn:z.number().int().min(0).max(49).nullable(),priorityColumn:z.number().int().min(0).max(49).nullable()}).strict()
@@ -22,6 +24,14 @@ function parseWorkbookMapping(value?:string):TaskWorkbookMapping|undefined{
 @Injectable()
 export class TaskService {
   constructor(private readonly db:DatabaseService,private readonly workspaces:WorkspaceService) {}
+  private async transitionRule(sql:Sql|TransactionSql,workspaceId:string,projectId:string,fromColumnId:string,toColumnId:string,kind:'TASK'|'STORY'|'BUG',comment=''){
+    const transitions=await sql<StoredTransition[]>`SELECT from_column_id AS "fromColumnId",to_column_id AS "toColumnId",name,bug_name AS "bugName",requires_comment AS "requiresComment" FROM workflow_transitions WHERE workspace_id=${workspaceId} AND project_id=${projectId} AND from_column_id=${fromColumnId} AND to_column_id=${toColumnId}`
+    try{return resolveTransition(transitions,fromColumnId,toColumnId,kind,comment)}catch(error){if(error instanceof WorkflowTransitionError)throw new BadRequestException({code:error.code,message:error.message});throw error}
+  }
+  private async recordTransition(sql:Sql|TransactionSql,workspaceId:string,taskId:string,userId:string,fromColumnId:string,toColumnId:string,actionName:string,comment:string|null){
+    await sql`INSERT INTO task_transition_events(workspace_id,task_id,actor_id,from_column_id,to_column_id,action_name,comment) VALUES(${workspaceId},${taskId},${userId},${fromColumnId},${toColumnId},${actionName},${comment})`
+    await sql`INSERT INTO activities(workspace_id,task_id,actor_id,action,data) VALUES(${workspaceId},${taskId},${userId},'task.transitioned',${JSON.stringify({fromColumnId,toColumnId,actionName,comment})}::jsonb)`
+  }
   async list(workspaceId:string,userId:string,raw:unknown) {
     await this.workspaces.role(workspaceId,userId,'task.read')
     const q=parse(listSchema,raw),offset=(q.page-1)*q.pageSize,project=q.projectId??null,needle=q.query?`%${q.query}%`:null,priority=q.priority??null,kind=q.kind??null
@@ -84,15 +94,31 @@ export class TaskService {
   async update(workspaceId:string,userId:string,id:string,input:ReturnType<typeof taskPatchSchema.parse>) {
     await this.workspaces.role(workspaceId,userId,'task.update')
     return this.db.client.begin(async sql=>{
-      const [before]=await sql<{column_id:string;project_id:string;version:number;title:string}[]>`SELECT column_id,project_id,version,title FROM tasks WHERE id=${id} AND workspace_id=${workspaceId} AND deleted_at IS NULL`
+      const [before]=await sql<{column_id:string;project_id:string;version:number;title:string;kind:'TASK'|'STORY'|'BUG'}[]>`SELECT column_id,project_id,version,title,kind FROM tasks WHERE id=${id} AND workspace_id=${workspaceId} AND deleted_at IS NULL`
       if(!before)throw new NotFoundException({code:'TASK_NOT_FOUND',message:'任务不存在'})
       if(input.columnId){const [column]=await sql`SELECT 1 FROM board_columns WHERE id=${input.columnId} AND project_id=${before.project_id} AND workspace_id=${workspaceId}`;if(!column)throw new NotFoundException({code:'COLUMN_NOT_FOUND',message:'看板列不存在'})}
+      const transition=input.columnId&&input.columnId!==before.column_id?await this.transitionRule(sql,workspaceId,before.project_id,before.column_id,input.columnId,input.kind??before.kind):null
       const [task]=await sql<{id:string;version:number}[]>`UPDATE tasks SET title=coalesce(${input.title??null},title),description=coalesce(${input.description??null},description),kind=coalesce(${input.kind??null}::task_kind,kind),type_fields=CASE WHEN ${'typeFields' in input} THEN ${input.typeFields===undefined?null:JSON.stringify(input.typeFields)}::jsonb ELSE type_fields END,priority=coalesce(${input.priority??null}::task_priority,priority),column_id=coalesce(${input.columnId??null}::uuid,column_id),due_date=CASE WHEN ${'dueDate' in input} THEN ${input.dueDate??null}::date ELSE due_date END,version=version+1,updated_at=now() WHERE id=${id} AND workspace_id=${workspaceId} AND version=${input.version} RETURNING id,version`
       if(!task)throw new ConflictException({code:'TASK_VERSION_CONFLICT',message:'任务已被其他成员修改',details:{currentVersion:before.version}})
       if(input.assigneeIds){const previous=await sql<{userId:string}[]>`SELECT user_id AS "userId" FROM task_assignees WHERE task_id=${id} AND workspace_id=${workspaceId}`;await sql`DELETE FROM task_assignees WHERE task_id=${id} AND workspace_id=${workspaceId}`;for(const assignee of input.assigneeIds){const [assigned]=await sql`INSERT INTO task_assignees(workspace_id,task_id,user_id) SELECT ${workspaceId},${id},user_id FROM memberships WHERE workspace_id=${workspaceId} AND user_id=${assignee} AND disabled_at IS NULL RETURNING user_id`;if(!assigned)throw new BadRequestException({code:'ASSIGNEE_NOT_MEMBER',message:'负责人不是当前工作区的有效成员'});if(assignee!==userId&&!previous.some(item=>item.userId===assignee))await sql`INSERT INTO notifications(workspace_id,user_id,task_id,actor_id,title,body,action) VALUES(${workspaceId},${assignee},${id},${userId},${`已指派任务：${input.title??before.title}`},'你成为了该任务的负责人','task.assigned')`}}
       if(input.labels){await sql`DELETE FROM task_labels WHERE task_id=${id} AND workspace_id=${workspaceId}`;for(const name of input.labels){const [label]=await sql<{id:string}[]>`INSERT INTO labels(workspace_id,name) VALUES(${workspaceId},${name}) ON CONFLICT(workspace_id,name) DO UPDATE SET name=excluded.name RETURNING id`;await sql`INSERT INTO task_labels(workspace_id,task_id,label_id) VALUES(${workspaceId},${id},${label!.id})`}}
+      if(transition)await this.recordTransition(sql,workspaceId,id,userId,before.column_id,input.columnId!,transition.actionName,null)
       await sql`INSERT INTO activities(workspace_id,task_id,actor_id,action,data) VALUES(${workspaceId},${id},${userId},'task.updated',${JSON.stringify({fromColumn:before.column_id,toColumn:input.columnId})}::jsonb)`
       return task
+    })
+  }
+  async transition(workspaceId:string,userId:string,id:string,input:ReturnType<typeof taskTransitionSchema.parse>){
+    await this.workspaces.role(workspaceId,userId,'task.update')
+    return this.db.client.begin(async sql=>{
+      const [task]=await sql<{projectId:string;columnId:string;kind:'TASK'|'STORY'|'BUG';title:string;version:number}[]>`SELECT project_id AS "projectId",column_id AS "columnId",kind,title,version FROM tasks WHERE id=${id} AND workspace_id=${workspaceId} AND deleted_at IS NULL FOR UPDATE`
+      if(!task)throw new NotFoundException({code:'TASK_NOT_FOUND',message:'任务不存在'})
+      if(task.version!==input.version)throw new ConflictException({code:'TASK_VERSION_CONFLICT',message:'任务已被其他成员修改',details:{currentVersion:task.version}})
+      const transition=await this.transitionRule(sql,workspaceId,task.projectId,task.columnId,input.toColumnId,task.kind,input.comment)
+      const [updated]=await sql<{id:string;version:number}[]>`UPDATE tasks SET column_id=${input.toColumnId},version=version+1,updated_at=now() WHERE id=${id} AND workspace_id=${workspaceId} AND version=${input.version} RETURNING id,version`
+      await this.recordTransition(sql,workspaceId,id,userId,task.columnId,input.toColumnId,transition.actionName,transition.comment)
+      const recipients=await sql<{userId:string}[]>`SELECT user_id AS "userId" FROM task_watchers WHERE task_id=${id} UNION SELECT user_id AS "userId" FROM task_assignees WHERE task_id=${id}`
+      for(const recipient of recipients)if(recipient.userId!==userId)await sql`INSERT INTO notifications(workspace_id,user_id,task_id,actor_id,title,body,action) VALUES(${workspaceId},${recipient.userId},${id},${userId},${`${transition.actionName}：${task.title}`},${transition.comment??''},'task.transitioned')`
+      return{...updated,columnId:input.toColumnId,actionName:transition.actionName}
     })
   }
   async bulkUpdate(workspaceId:string,userId:string,input:ReturnType<typeof taskBulkSchema.parse>) {
@@ -106,7 +132,7 @@ export class TaskService {
       }
       let updated=0
       for(const taskId of input.taskIds){
-        const [task]=await sql<{projectId:string;title:string}[]>`SELECT project_id AS "projectId",title FROM tasks WHERE id=${taskId} AND workspace_id=${workspaceId} AND deleted_at IS NULL`
+        const [task]=await sql<{projectId:string;columnId:string;kind:'TASK'|'STORY'|'BUG';title:string}[]>`SELECT project_id AS "projectId",column_id AS "columnId",kind,title FROM tasks WHERE id=${taskId} AND workspace_id=${workspaceId} AND deleted_at IS NULL`
         if(!task)throw new NotFoundException({code:'TASK_NOT_FOUND',message:'批量操作中包含不存在的任务'})
         if(input.action.type==='ASSIGN'){
           const previous=await sql<{userId:string}[]>`SELECT user_id AS "userId" FROM task_assignees WHERE task_id=${taskId} AND workspace_id=${workspaceId}`
@@ -116,7 +142,9 @@ export class TaskService {
         }else if(input.action.type==='MOVE'){
           const [column]=await sql`SELECT 1 FROM board_columns WHERE id=${input.action.columnId} AND project_id=${task.projectId} AND workspace_id=${workspaceId}`
           if(!column)throw new NotFoundException({code:'COLUMN_NOT_FOUND',message:'目标状态不属于所选任务的项目'})
+          const transition=await this.transitionRule(sql,workspaceId,task.projectId,task.columnId,input.action.columnId,task.kind)
           await sql`UPDATE tasks SET column_id=${input.action.columnId},version=version+1,updated_at=now() WHERE id=${taskId} AND workspace_id=${workspaceId}`
+          await this.recordTransition(sql,workspaceId,taskId,userId,task.columnId,input.action.columnId,transition.actionName,null)
         }else if(input.action.type==='PRIORITY'){
           await sql`UPDATE tasks SET priority=${input.action.priority},version=version+1,updated_at=now() WHERE id=${taskId} AND workspace_id=${workspaceId}`
         }else if(input.action.type==='KIND'){
@@ -150,6 +178,8 @@ export class TaskController {
     return this.tasks.importXlsx(workspaceId,req.user!.id,input.projectId,input.columnId,file.buffer,parseWorkbookMapping(input.mapping))
   }
   @Patch('bulk') bulkUpdate(@Req() req:AppRequest,@Param('workspaceId') workspaceId:string,@Body() body:unknown){return this.tasks.bulkUpdate(workspaceId,req.user!.id,parse(taskBulkSchema,body))}
+  @Post(':id/transitions') transition(@Req() req:AppRequest,@Param('workspaceId') workspaceId:string,@Param('id') id:string,@Body() body:unknown){return this.tasks.transition(workspaceId,req.user!.id,id,parse(taskTransitionSchema,body))}
+  @Get(':id/transitions') async transitions(@Req() req:AppRequest,@Param('workspaceId') workspaceId:string,@Param('id') id:string){await this.workspaces.role(workspaceId,req.user!.id,'task.read');return this.db.client`SELECT e.id,e.from_column_id AS "fromColumnId",source.name AS "fromColumnName",e.to_column_id AS "toColumnId",target.name AS "toColumnName",e.action_name AS "actionName",e.comment,e.created_at AS "createdAt",u.name AS actor FROM task_transition_events e JOIN users u ON u.id=e.actor_id JOIN board_columns source ON source.id=e.from_column_id JOIN board_columns target ON target.id=e.to_column_id WHERE e.workspace_id=${workspaceId} AND e.task_id=${id} ORDER BY e.created_at DESC,e.id DESC LIMIT 100`}
   @Patch(':id') update(@Req() req:AppRequest,@Param('workspaceId') workspaceId:string,@Param('id') id:string,@Body() body:unknown){return this.tasks.update(workspaceId,req.user!.id,id,parse(taskPatchSchema,body))}
   @Delete(':id') async remove(@Req() req:AppRequest,@Param('workspaceId') workspaceId:string,@Param('id') id:string){await this.workspaces.role(workspaceId,req.user!.id,'task.delete');await this.db.client`UPDATE tasks SET deleted_at=now(),deleted_by=${req.user!.id} WHERE id=${id} AND workspace_id=${workspaceId}`;return{ok:true}}
   @Post(':id/archive') async archive(@Req() req:AppRequest,@Param('workspaceId') workspaceId:string,@Param('id') id:string){await this.workspaces.role(workspaceId,req.user!.id,'task.update');await this.db.client`UPDATE tasks SET archived_at=now() WHERE id=${id} AND workspace_id=${workspaceId}`;return{ok:true}}

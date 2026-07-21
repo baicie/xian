@@ -99,6 +99,7 @@ import {
 } from "./components/ui/empty";
 import {
   Field,
+  FieldDescription,
   FieldError,
   FieldGroup,
   FieldLabel,
@@ -142,6 +143,8 @@ import { ToggleGroup, ToggleGroupItem } from "./components/ui/toggle-group";
 import TaskComments from "./features/tasks/TaskComments";
 import TaskSubtasks from "./features/tasks/TaskSubtasks";
 import TaskTypeFieldsEditor from "./features/tasks/TaskTypeFields";
+import TaskWorkflow from "./features/tasks/TaskWorkflow";
+import { commonTransitionTargets, transitionsForTask, workflowTemplateOptions, type WorkflowColumn, type WorkflowTemplateKey, type WorkflowTransition } from "./workflow";
 
 type Lang = "zh" | "en";
 type Theme = "light" | "dark";
@@ -154,7 +157,7 @@ type Member = {
   role: string;
   disabledAt: string | null;
 };
-type BoardColumn = { id: string; label: string; accent: string };
+type BoardColumn = WorkflowColumn & { label: string; accent: string };
 
 const copy = {
   zh: {
@@ -636,23 +639,27 @@ function TaskDialog({
   task,
   workspaceId,
   columns,
+  transitions,
   members,
   code,
   onClose,
   onSave,
   onDelete,
   onSubtasksChanged,
+  onTransition,
   t,
 }: {
   task: Task | null;
   workspaceId: string;
   columns: BoardColumn[];
+  transitions: WorkflowTransition[];
   members: Member[];
   code: string;
   onClose: () => void;
   onSave: (task: Task) => Promise<void>;
   onDelete: (task: Task) => Promise<void>;
   onSubtasksChanged: () => Promise<void>;
+  onTransition: (task:Task,transition:WorkflowTransition,comment:string) => Promise<void>;
   t: Copy;
 }) {
   const [draft, setDraft] = useState<Task | null>(task);
@@ -662,20 +669,11 @@ function TaskDialog({
   useEffect(()=>{if(!task||task.id==='new'){setGithubReferences(null);setGithubLinks([]);setInitialGithubLinks([]);return}let active=true;Promise.all([api.githubReferences(workspaceId),api.taskGitHubLinks(workspaceId,task.id)]).then(([references,links])=>{if(active){setGithubReferences(references.projectId===task.projectId?references.items:null);setGithubLinks(links);setInitialGithubLinks(links)}}).catch(()=>{if(active){setGithubReferences(null);setGithubLinks([]);setInitialGithubLinks([])}});return()=>{active=false}},[task?.id,workspaceId])
   useEffect(()=>{if(!task||task.id==='new'){setWatching(false);return}let active=true;api.taskWatch(workspaceId,task.id).then(value=>active&&setWatching(value.watching)).catch(()=>active&&setWatching(false));return()=>{active=false}},[task?.id,workspaceId])
   if (!draft) return null;
+  const save=async()=>{if(!draft.title.trim())return;try{const linkKeys=(links:GitHubReference[])=>links.map(link=>`${link.kind}:${link.number}`).sort().join(',');if(draft.id!=='new'&&githubReferences&&linkKeys(githubLinks)!==linkKeys(initialGithubLinks))await api.setTaskGitHubLinks(workspaceId,draft.id,githubLinks.map(({kind,number})=>({kind,number})));await onSave(draft)}catch(reason){toast.error(reason instanceof Error?reason.message:(t.taskDetails==='任务详情'?'保存 GitHub 关联失败':'Failed to save GitHub links'))}}
   return (
     <Sheet open={Boolean(task)} onOpenChange={(open) => !open && onClose()}>
       <SheetContent className="task-sheet">
-        <form
-          className="task-sheet-form"
-          onSubmit={async (event: FormEvent) => {
-            event.preventDefault();
-            try{
-              const linkKeys=(links:GitHubReference[])=>links.map(link=>`${link.kind}:${link.number}`).sort().join(',')
-              if(draft.id!=='new'&&githubReferences&&linkKeys(githubLinks)!==linkKeys(initialGithubLinks))await api.setTaskGitHubLinks(workspaceId,draft.id,githubLinks.map(({kind,number})=>({kind,number})))
-              await onSave(draft);
-            }catch(reason){toast.error(reason instanceof Error?reason.message:(t.taskDetails==='任务详情'?'保存 GitHub 关联失败':'Failed to save GitHub links'))}
-          }}
-        >
+        <div className="task-sheet-form">
           <SheetHeader>
             <span className="dialog-key">
               {code}-{draft.number || "NEW"}
@@ -708,19 +706,6 @@ function TaskDialog({
                     { value: "BUG", label: t.bug },
                   ]}
                   onChange={(kind) => setDraft({ ...draft, kind })}
-                  className="choice-select"
-                />
-              </Field>
-              <Field>
-                <FieldLabel>{t.status}</FieldLabel>
-                <ChoiceSelect
-                  label={t.status}
-                  value={draft.column}
-                  options={columns.map((column) => ({
-                    value: column.id,
-                    label: column.label,
-                  }))}
-                  onChange={(column) => setDraft({ ...draft, column })}
                   className="choice-select"
                 />
               </Field>
@@ -760,6 +745,7 @@ function TaskDialog({
                 />
               </Field>
             </FieldGroup>
+            {draft.id!=="new"?<TaskWorkflow workspaceId={workspaceId} task={draft} columns={columns} transitions={transitions} en={t.taskDetails!=="任务详情"} onTransition={(transition,comment)=>onTransition(draft,transition,comment)}/>:<Field><FieldLabel>{t.status}</FieldLabel><Badge variant="secondary">{columns.find(column=>column.id===draft.column)?.label}</Badge></Field>}
             <Field>
               <FieldLabel htmlFor="task-tags">{t.tags}</FieldLabel>
               <Input
@@ -796,12 +782,12 @@ function TaskDialog({
             <Button type="button" variant="outline" onClick={onClose}>
               {t.cancel}
             </Button>
-            <Button type="submit">
+            <Button type="button" disabled={!draft.title.trim()} onClick={()=>void save()}>
               <Check data-icon="inline-start" />
               {t.save}
             </Button>
           </SheetFooter>
-        </form>
+        </div>
         <AlertDialog open={confirmingDelete} onOpenChange={open=>!deletingTask&&setConfirmingDelete(open)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t.deleteTaskTitle}</AlertDialogTitle><AlertDialogDescription><strong>{draft.title}</strong><br/>{t.deleteTaskDescription}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={deletingTask}>{t.cancel}</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={deletingTask} onClick={async()=>{setDeletingTask(true);try{await onDelete(draft);setConfirmingDelete(false)}catch(reason){toast.error(reason instanceof Error?reason.message:(t.taskDetails==='任务详情'?'删除失败':'Delete failed'))}finally{setDeletingTask(false)}}}>{deletingTask?(t.taskDetails==='任务详情'?'删除中…':'Deleting…'):t.deleteTask}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
       </SheetContent>
     </Sheet>
@@ -817,11 +803,13 @@ function CreateDialog({
   kind: "workspace" | "project" | null;
   lang: Lang;
   onClose: () => void;
-  onCreate: (name: string, code?: string) => Promise<void>;
+  onCreate: (name: string, code?: string, workflowTemplate?:WorkflowTemplateKey) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
+    [workflowTemplate,setWorkflowTemplate]=useState<WorkflowTemplateKey>('DELIVERY'),
     en = lang === "en";
+  useEffect(()=>{if(kind==='project')setWorkflowTemplate('DELIVERY')},[kind])
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setBusy(true);
@@ -833,6 +821,7 @@ function CreateDialog({
         kind === "project"
           ? String(values.get("code")).toUpperCase()
           : undefined,
+        kind === "project"?workflowTemplate:undefined,
       );
       onClose();
     } catch (reason) {
@@ -886,7 +875,7 @@ function CreateDialog({
               {error ? <FieldError>{error}</FieldError> : null}
             </Field>
             {kind === "project" ? (
-              <Field>
+              <><Field>
                 <FieldLabel htmlFor="create-code">
                   {en ? "Code" : "项目代码"}
                 </FieldLabel>
@@ -899,7 +888,7 @@ function CreateDialog({
                   pattern="[A-Za-z0-9]+"
                   placeholder="TEAM"
                 />
-              </Field>
+              </Field><Field><FieldLabel>{en?'Workflow':'项目流程'}</FieldLabel><ChoiceSelect label={en?'Workflow':'项目流程'} value={workflowTemplate} options={workflowTemplateOptions.map(option=>({value:option.value,label:en?{SIMPLE:'Simple board',DELIVERY:'Development delivery',RELEASE:'Full development'}[option.value]:option.name}))} onChange={setWorkflowTemplate} className="choice-select"/><FieldDescription>{en?{SIMPLE:'To do, in progress, done',DELIVERY:'Development, testing, acceptance and return',RELEASE:'Development, testing, release and completion'}[workflowTemplate]:workflowTemplateOptions.find(option=>option.value===workflowTemplate)?.description}</FieldDescription></Field></>
             ) : null}
           </FieldGroup>
           <DialogFooter>
@@ -1028,7 +1017,8 @@ export default function App() {
     [workspaceId, setWorkspaceId] = useState(""),
     [projects, setProjects] = useState<Project[]>([]),
     [members, setMembers] = useState<Member[]>([]),
-    [columns, setColumns] = useState<BoardColumn[]>([]);
+    [columns, setColumns] = useState<BoardColumn[]>([]),
+    [workflowTransitions,setWorkflowTransitions]=useState<WorkflowTransition[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]),
     [error, setError] = useState(""),
     [query, setQuery] = useState(""),
@@ -1126,17 +1116,19 @@ export default function App() {
     if (!project || !workspaceId) return;
     setError("");
     Promise.all([
-      api.columns(workspaceId, project.id),
+      api.workflow(workspaceId, project.id),
       api.tasks(workspaceId, project.id),
     ])
-      .then(([nextColumns, nextTasks]) => {
+      .then(([workflow, nextTasks]) => {
         setColumns(
-          nextColumns.map((column) => ({
+          workflow.columns.map((column) => ({
+            ...column,
             id: column.id,
             label: column.name,
             accent: column.color,
           })),
         );
+        setWorkflowTransitions(workflow.transitions);
         setTasks(nextTasks);
       })
       .catch((reason) => setError(reason.message));
@@ -1164,7 +1156,7 @@ export default function App() {
       ),
     [tasks, query, kind],
   );
-  const selectedTaskCount=selectedTaskIds.length,allShownSelected=shownTasks.length>0&&shownTasks.every(task=>selectedTaskIds.includes(task.id));
+  const selectedTasks=tasks.filter(task=>selectedTaskIds.includes(task.id)),selectedTaskCount=selectedTaskIds.length,allShownSelected=shownTasks.length>0&&shownTasks.every(task=>selectedTaskIds.includes(task.id)),bulkTransitionTargets=commonTransitionTargets(workflowTransitions,selectedTasks);
   useEffect(()=>{setSelectedTaskIds([]);setConfirmingBulkDelete(false)},[workspaceId,project?.id,view,query,kind])
   const reload = async () => {
     if (project) setTasks(await api.tasks(workspaceId, project.id));
@@ -1180,6 +1172,11 @@ export default function App() {
       setError(reason instanceof Error ? reason.message : "保存失败");
     }
   };
+  const transitionTask=async(task:Task,transition:WorkflowTransition,comment:string)=>{
+    const saved=await api.updateTask(workspaceId,task)
+    const result=await api.transitionTask(workspaceId,task.id,transition.toColumnId,saved.version,comment)
+    setEditing(null);await reload();toast.success(lang==='zh'?result.actionName:`Task moved: ${result.actionName}`)
+  }
   const toggleTaskSelection=(taskId:string,checked:boolean)=>setSelectedTaskIds(current=>checked?[...new Set([...current,taskId])]:current.filter(id=>id!==taskId))
   const toggleAllShown=(checked:boolean)=>setSelectedTaskIds(current=>checked?[...new Set([...current,...shownTasks.map(task=>task.id)])]:current.filter(id=>!shownTasks.some(task=>task.id===id)))
   const applyBulk=async(action:Parameters<typeof api.bulkUpdateTasks>[2],success:string)=>{
@@ -1241,10 +1238,13 @@ export default function App() {
   const dropImport=(event:DragEvent)=>{event.preventDefault();setImportDragging(false);const file=event.dataTransfer.files[0];if(file)void previewTaskImport(file)}
   const move = async (id: string, column: ColumnId) => {
     const task = tasks.find((item) => item.id === id);
-    if (!task) return;
+    if (!task||task.column===column) return;
+    const transition=transitionsForTask(workflowTransitions,task).find(item=>item.toColumnId===column)
+    if(!transition){setError(lang==='zh'?'当前状态不能流转到目标状态':'This transition is not allowed');return}
+    if(transition.requiresComment){setEditing(task);toast.info(lang==='zh'?'请在任务详情填写驳回原因':'Add a return reason in task details');return}
     setTasks((current) => moveTask(current, id, column));
     try {
-      const result = await api.updateTask(workspaceId, { ...task, column });
+      const result = await api.transitionTask(workspaceId,task.id,column,task.version);
       setTasks((current) =>
         current.map((item) =>
           item.id === id ? { ...item, column, version: result.version } : item,
@@ -1255,8 +1255,8 @@ export default function App() {
       setError(reason instanceof Error ? reason.message : "移动失败");
     }
   };
-  const createProject = async (name: string, code?: string) => {
-    await api.createProject(workspaceId, { name, code: code! });
+  const createProject = async (name: string, code?: string, workflowTemplate:WorkflowTemplateKey='DELIVERY') => {
+    await api.createProject(workspaceId, { name, code: code!,workflowTemplate });
     const next = await api.projects(workspaceId);
     setProjects(next);
     const created = next[next.length - 1];
@@ -1506,7 +1506,7 @@ export default function App() {
               <strong>{selectedTaskCount} {t.selectedTasks}</strong>
               <Button size="sm" disabled={bulkBusy||!userId} onClick={()=>void applyBulk({type:'ASSIGN',assigneeIds:[userId]},'assigned')}><UserRoundCheck data-icon="inline-start"/>{t.assignToMe}</Button>
               <DropdownMenu><DropdownMenuTrigger render={<Button type="button" size="sm" variant="outline" disabled={bulkBusy}/>}>{t.changeAssignee}<ChevronDown data-icon="inline-end"/></DropdownMenuTrigger><DropdownMenuContent><DropdownMenuGroup><DropdownMenuLabel>{t.assignee}</DropdownMenuLabel><DropdownMenuItem onClick={()=>void applyBulk({type:'ASSIGN',assigneeIds:[]},'unassigned')}>{t.unassigned}</DropdownMenuItem><DropdownMenuSeparator/>{members.filter(member=>!member.disabledAt).map(member=><DropdownMenuItem key={member.id} onClick={()=>void applyBulk({type:'ASSIGN',assigneeIds:[member.id]},'assigned')}>{member.name}</DropdownMenuItem>)}</DropdownMenuGroup></DropdownMenuContent></DropdownMenu>
-              <DropdownMenu><DropdownMenuTrigger render={<Button type="button" size="sm" variant="outline" disabled={bulkBusy}/>}>{t.changeStatus}<ChevronDown data-icon="inline-end"/></DropdownMenuTrigger><DropdownMenuContent><DropdownMenuGroup><DropdownMenuLabel>{t.status}</DropdownMenuLabel>{columns.map(column=><DropdownMenuItem key={column.id} onClick={()=>void applyBulk({type:'MOVE',columnId:column.id},'moved')}><ArrowRight/>{column.label}</DropdownMenuItem>)}</DropdownMenuGroup></DropdownMenuContent></DropdownMenu>
+              <DropdownMenu><DropdownMenuTrigger render={<Button type="button" size="sm" variant="outline" disabled={bulkBusy||bulkTransitionTargets.length===0}/>}>{t.changeStatus}<ChevronDown data-icon="inline-end"/></DropdownMenuTrigger><DropdownMenuContent><DropdownMenuGroup><DropdownMenuLabel>{t.status}</DropdownMenuLabel>{columns.filter(column=>bulkTransitionTargets.includes(column.id)).map(column=><DropdownMenuItem key={column.id} onClick={()=>void applyBulk({type:'MOVE',columnId:column.id},'moved')}><ArrowRight/>{column.label}</DropdownMenuItem>)}</DropdownMenuGroup></DropdownMenuContent></DropdownMenu>
               <DropdownMenu><DropdownMenuTrigger render={<Button type="button" size="sm" variant="outline" disabled={bulkBusy}/>}>{t.changeType}<ChevronDown data-icon="inline-end"/></DropdownMenuTrigger><DropdownMenuContent><DropdownMenuGroup><DropdownMenuLabel>{t.type}</DropdownMenuLabel>{([['TASK',t.task],['STORY',t.story],['BUG',t.bug]] as const).map(([nextKind,label])=><DropdownMenuItem key={nextKind} onClick={()=>void applyBulk({type:'KIND',kind:nextKind},'updated')}><List/>{label}</DropdownMenuItem>)}</DropdownMenuGroup></DropdownMenuContent></DropdownMenu>
               <DropdownMenu><DropdownMenuTrigger render={<Button type="button" size="sm" variant="outline" disabled={bulkBusy}/>}>{t.changePriority}<ChevronDown data-icon="inline-end"/></DropdownMenuTrigger><DropdownMenuContent><DropdownMenuGroup><DropdownMenuLabel>{t.priority}</DropdownMenuLabel>{([['HIGH',t.high],['MEDIUM',t.medium],['LOW',t.low]] as const).map(([priority,label])=><DropdownMenuItem key={priority} onClick={()=>void applyBulk({type:'PRIORITY',priority},'updated')}><Flag/>{label}</DropdownMenuItem>)}</DropdownMenuGroup></DropdownMenuContent></DropdownMenu>
               <Button type="button" size="sm" variant="destructive" disabled={bulkBusy} onClick={()=>setConfirmingBulkDelete(true)}><Trash2 data-icon="inline-start"/>{t.bulkDelete}</Button>
@@ -1657,12 +1657,14 @@ export default function App() {
           task={editing}
           workspaceId={workspaceId}
           columns={columns}
+          transitions={workflowTransitions}
           members={members}
           code={project.code}
           onClose={() => setEditing(null)}
           onSave={updateTask}
           onDelete={async task=>{await api.deleteTask(workspaceId,task.id);setEditing(null);await reload();toast.success(lang==='zh'?'任务已删除':'Task deleted')}}
           onSubtasksChanged={reload}
+          onTransition={transitionTask}
           t={t}
         />
       ) : null}
@@ -1671,8 +1673,8 @@ export default function App() {
         kind={creating}
         lang={lang}
         onClose={() => setCreating(null)}
-        onCreate={(name, code) =>
-          code ? createProject(name, code) : createWorkspace(name)
+        onCreate={(name, code, workflowTemplate) =>
+          code ? createProject(name, code,workflowTemplate) : createWorkspace(name)
         }
       />
       <RenameProjectDialog

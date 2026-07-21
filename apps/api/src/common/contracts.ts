@@ -8,7 +8,7 @@ export const setupPasswordSchema = z.object({ token: z.string().min(16), passwor
 export const loginSchema = z.object({ email: z.string().email(), password: z.string().min(1) }).strict()
 export const workspaceSchema = z.object({ name: z.string().trim().min(1).max(80) }).strict()
 export const memberSchema = z.object({ email: z.string().email(), role: z.enum(['ADMIN','MEMBER','VIEWER']) }).strict()
-export const projectSchema = z.object({ name: z.string().trim().min(1).max(120), code: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{2,8}$/), description: z.string().max(4000).default(''), color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#2367d1') }).strict()
+export const projectSchema = z.object({ name: z.string().trim().min(1).max(120), code: z.string().trim().toUpperCase().regex(/^[A-Z0-9]{2,8}$/), description: z.string().max(4000).default(''), color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#2367d1'), workflowTemplate: z.enum(['SIMPLE','DELIVERY','RELEASE']).default('DELIVERY') }).strict()
 export const taskTypeFieldsSchema = z.object({
   workContent: z.string().max(20000).default(''),
   completionCriteria: z.string().max(10000).default(''),
@@ -29,6 +29,7 @@ export const taskPatchSchema = z.object({
   kind: z.enum(['TASK','STORY','BUG']).optional(), typeFields: taskTypeFieldsSchema.optional(), priority: z.enum(['HIGH','MEDIUM','LOW']).optional(), assigneeIds: z.array(z.string().uuid()).max(20).optional(),
   dueDate: z.string().date().nullable().optional(), labels: z.array(z.string().trim().min(1).max(40)).max(20).optional(), version: z.number().int().positive(),
 }).strict()
+export const taskTransitionSchema=z.object({toColumnId:z.string().uuid(),version:z.number().int().positive(),comment:z.string().max(2000).default('')}).strict()
 const bulkTaskIds = z.array(z.string().uuid()).min(1).max(100).refine(ids => new Set(ids).size === ids.length, 'taskIds must be unique')
 export const taskBulkSchema = z.object({
   taskIds: bulkTaskIds,

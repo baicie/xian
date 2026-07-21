@@ -6,6 +6,7 @@ import { DatabaseService } from '../database/database.service.js'
 import { AppRequest, Public, parse, sessionHash } from '../common/http.js'
 import { loginSchema, registerSchema, setupPasswordSchema } from '../common/contracts.js'
 import { authConfig } from '../common/auth-config.js'
+import { installWorkflow } from './workflows.js'
 
 @Injectable()
 export class AuthService {
@@ -39,8 +40,8 @@ export class AuthService {
       const [workspace] = await sql<{ id: string; name: string; slug: string }[]>`INSERT INTO workspaces(name,slug,created_by) VALUES(${input.workspaceName},${slug},${user.id}) RETURNING id,name,slug`
       if (!workspace) throw new Error('workspace insert failed')
       await sql`INSERT INTO memberships(workspace_id,user_id,role) VALUES(${workspace.id},${user.id},'OWNER')`
-      const [project] = await sql<{id:string}[]>`INSERT INTO projects(workspace_id,name,code,description,color,lead_id) VALUES(${workspace.id},'第一个项目','TEAM','从这里开始团队协作','#2367d1',${user.id}) RETURNING id`
-      for (const [index,item] of [['待处理','#84908b'],['进行中','#2367d1'],['待验收','#d5792a'],['已完成','#27825a']].entries()) await sql`INSERT INTO board_columns(workspace_id,project_id,name,color,position) VALUES(${workspace.id},${project!.id},${item![0]!},${item![1]!},${(index+1)*1000})`
+      const [project] = await sql<{id:string}[]>`INSERT INTO projects(workspace_id,name,code,description,color,lead_id,workflow_template) VALUES(${workspace.id},'第一个项目','TEAM','从这里开始团队协作','#2367d1',${user.id},'DELIVERY') RETURNING id`
+      await installWorkflow(sql,workspace.id,project!.id,'DELIVERY')
       return { user, workspace }
     }) } catch (error) {
       if (typeof error === 'object' && error && 'code' in error && error.code === '23505' && 'constraint_name' in error && error.constraint_name === 'users_email_key') throw new ConflictException({ code: 'EMAIL_EXISTS', message: '该邮箱已注册，请直接登录' })
