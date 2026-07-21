@@ -22,6 +22,7 @@ import type { Task } from '@/models/board'
 import { api, type AuthConfig, type Notification } from '@/api'
 import { appPaths, getSettingsSectionFromPath, type SettingsSection } from '@/app/routes'
 import ChoiceSelect from '@/components/ChoiceSelect'
+import { copyText } from '@/lib/clipboard'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -569,7 +570,14 @@ function ProvisionMemberDialog({
                 <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                   {en ? 'Close' : '关闭'}
                 </Button>
-                <Button type="button" onClick={() => void navigator.clipboard.writeText(setupUrl)}>
+                <Button
+                  type="button"
+                  onClick={() =>
+                    void copyText(setupUrl)
+                      .then(() => toast.success(en ? 'Link copied' : '链接已复制'))
+                      .catch(() => toast.error(en ? 'Copy failed' : '复制失败，请手动复制'))
+                  }
+                >
                   {en ? 'Copy link' : '复制链接'}
                 </Button>
               </DialogFooter>
@@ -657,9 +665,11 @@ function AddMemberDialog({
       setBusy(false)
     }
   }
-  const copyInvite = async () => {
+  const copyInvite = () => {
     if (!inviteUrl) return
-    await navigator.clipboard.writeText(inviteUrl)
+    void copyText(inviteUrl)
+      .then(() => toast.success(en ? 'Link copied' : '链接已复制'))
+      .catch(() => toast.error(en ? 'Copy failed' : '复制失败，请手动复制'))
   }
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -688,7 +698,7 @@ function AddMemberDialog({
                 <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                   {en ? 'Close' : '关闭'}
                 </Button>
-                <Button type="button" onClick={() => void copyInvite()}>
+                <Button type="button" onClick={copyInvite}>
                   {en ? 'Copy link' : '复制链接'}
                 </Button>
               </DialogFooter>
