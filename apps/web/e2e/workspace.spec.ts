@@ -60,6 +60,53 @@ test('opens the document context menu at the pointer position', async ({ page })
   expect(menuBox!.y).toBeCloseTo(listBox!.y + position.y, 0)
 })
 
+test('opens task card actions from the context menu', async ({ page }) => {
+  await page.route('**/api/v1/**', async route => {
+    const pathname = new URL(route.request().url()).pathname
+    const responses: Record<string, unknown> = {
+      '/api/v1/auth/me': { user: { id: 'user-1', name: '测试用户' }, csrfToken: 'csrf' },
+      '/api/v1/workspaces': [{ id: 'workspace-1', name: '测试空间', slug: 'test', role: 'OWNER' }],
+      '/api/v1/workspaces/workspace-1/projects': [{ id: 'project-1', name: '测试项目', code: 'TEST', color: '#2367d1' }],
+      '/api/v1/workspaces/workspace-1/members': [{ id: 'user-1', name: '测试用户', email: 'test@example.com', role: 'OWNER', disabledAt: null }],
+      '/api/v1/workspaces/workspace-1/projects/project-1/workflow': {
+        template: 'SIMPLE',
+        columns: [
+          { id: 'todo', key: 'TODO', name: '待处理', color: '#8b9691', stateType: 'BACKLOG', position: 0 },
+          { id: 'done', key: 'DONE', name: '已完成', color: '#287451', stateType: 'DONE', position: 1 },
+        ],
+        transitions: [{ id: 'complete', fromColumnId: 'todo', toColumnId: 'done', name: '完成', bugName: '修复', requiresComment: false, position: 0 }],
+      },
+      '/api/v1/workspaces/workspace-1/tasks': {
+        data: [{ id: 'task-1', number: 1, projectId: 'project-1', columnId: 'todo', title: '右键测试任务', description: '', kind: 'TASK', typeFields: {}, priority: 'MEDIUM', dueDate: null, version: 1, subtaskDone: 0, subtaskTotal: 0, assignees: [{ id: 'user-1', name: '测试用户' }], labels: [] }],
+      },
+      '/api/v1/auth/config': { registrationMode: 'admin_only', allowWorkspaceCreate: true, bootstrapAvailable: false },
+    }
+    const body = responses[pathname]
+    await route.fulfill({
+      status: body === undefined ? 404 : 200,
+      contentType: 'application/json',
+      body: JSON.stringify(body ?? { message: `Unhandled request: ${pathname}` }),
+    })
+  })
+
+  await page.goto('/projects/project-1')
+  const taskCard = page.locator('.task-card').filter({ hasText: '右键测试任务' })
+  await expect(taskCard).toBeVisible()
+  await taskCard.click({ button: 'right' })
+
+  const taskMenu = page.getByRole('menu')
+  await expect(taskMenu.getByRole('menuitem', { name: '打开任务' })).toBeVisible()
+  await expect(taskMenu.getByRole('menuitem', { name: '移动到' })).toBeVisible()
+  await expect(taskMenu.getByRole('menuitem', { name: '删除任务' })).toBeVisible()
+  await taskMenu.getByRole('menuitem', { name: '打开任务' }).click()
+  await expect(page.getByRole('dialog', { name: '任务详情' })).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  await taskCard.click({ button: 'right' })
+  await page.getByRole('menu').getByRole('menuitem', { name: '删除任务' }).click()
+  await expect(page.getByRole('alertdialog').getByRole('heading', { name: '确认删除任务？' })).toBeVisible()
+})
+
 test('registers a workspace, creates a task, and opens a document editor', async ({ page }) => {
   const pageErrors: Error[] = []
   page.on('pageerror', error => pageErrors.push(error))

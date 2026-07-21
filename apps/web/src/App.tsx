@@ -83,6 +83,16 @@ import {
   DialogTitle,
 } from "./components/ui/dialog";
 import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger,
+} from "./components/ui/context-menu";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
@@ -203,6 +213,8 @@ const copy = {
     description: "描述",
     taskTitle: "任务标题",
     taskDetails: "任务详情",
+    openTask: "打开任务",
+    moveTo: "移动到",
     cancel: "取消",
     save: "保存任务",
     deleteTask: "删除任务",
@@ -277,6 +289,8 @@ const copy = {
     description: "Description",
     taskTitle: "Task title",
     taskDetails: "Task details",
+    openTask: "Open task",
+    moveTo: "Move to",
     cancel: "Cancel",
     save: "Save task",
     deleteTask: "Delete task",
@@ -574,28 +588,36 @@ function AppSidebar({
 function TaskCard({
   task,
   onEdit,
+  onMove,
+  onDelete,
+  transitions,
+  columns,
   t,
   code,
 }: {
   task: Task;
   onEdit: (task: Task) => void;
+  onMove: (task: Task, column: ColumnId) => void;
+  onDelete: (task: Task) => void;
+  transitions: WorkflowTransition[];
+  columns: BoardColumn[];
   t: Copy;
   code: string;
 }) {
   const [dragging, setDragging] = useState(false);
+  const availableTransitions = transitionsForTask(transitions, task);
   return (
-    <Button
-      type="button"
-      className={`task-card ${dragging ? "dragging" : ""}`}
-      variant="ghost"
-      draggable
-      onDragStart={(event) => {
-        setDragging(true);
-        event.dataTransfer.setData("text/plain", String(task.id));
-      }}
-      onDragEnd={() => setDragging(false)}
-      onClick={() => onEdit(task)}
-    >
+    <ContextMenu>
+      <ContextMenuTrigger
+        render={<Button type="button" className={`task-card ${dragging ? "dragging" : ""}`} variant="ghost" />}
+        draggable
+        onDragStart={(event) => {
+          setDragging(true);
+          event.dataTransfer.setData("text/plain", String(task.id));
+        }}
+        onDragEnd={() => setDragging(false)}
+        onClick={() => onEdit(task)}
+      >
       <span className="task-top">
         <span className="task-key">{code}-{task.number}</span>
         <Badge variant={task.kind === "BUG" ? "destructive" : "secondary"}>
@@ -631,7 +653,19 @@ function TaskCard({
         </span>
         <span className="task-assignee"><UserAvatar name={task.assignee} small />{task.assignee}</span>
       </span>
-    </Button>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onClick={() => onEdit(task)}><PencilLine />{t.openTask}</ContextMenuItem>
+        {availableTransitions.length ? <ContextMenuSub>
+          <ContextMenuSubTrigger><ArrowRight />{t.moveTo}</ContextMenuSubTrigger>
+          <ContextMenuSubContent>
+            {availableTransitions.map(transition => <ContextMenuItem key={transition.id} onClick={() => onMove(task, transition.toColumnId)}><CircleDot />{columns.find(column => column.id === transition.toColumnId)?.label ?? transition.name}</ContextMenuItem>)}
+          </ContextMenuSubContent>
+        </ContextMenuSub> : null}
+        <ContextMenuSeparator />
+        <ContextMenuItem variant="destructive" onClick={() => onDelete(task)}><Trash2 />{t.deleteTask}</ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
@@ -1035,6 +1069,8 @@ export default function App() {
     [quickBusy,setQuickBusy]=useState(false);
   const [activeProjectId, setActiveProjectId] = useState(""),
     [editing, setEditing] = useState<Task | null>(null),
+    [contextDeleteTask, setContextDeleteTask] = useState<Task | null>(null),
+    [deletingFromMenu, setDeletingFromMenu] = useState(false),
     [renaming, setRenaming] = useState<Project | null>(null),
     [deleting, setDeleting] = useState<Project | null>(null),
     [creating, setCreating] = useState<"workspace" | "project" | null>(null);
@@ -1564,6 +1600,10 @@ export default function App() {
                             key={task.id}
                             task={task}
                             onEdit={setEditing}
+                            onMove={(task, column) => void move(task.id, column)}
+                            onDelete={setContextDeleteTask}
+                            transitions={workflowTransitions}
+                            columns={columns}
                             t={t}
                             code={project.code}
                           />
@@ -1668,6 +1708,12 @@ export default function App() {
           t={t}
         />
       ) : null}
+      <AlertDialog open={Boolean(contextDeleteTask)} onOpenChange={open=>!deletingFromMenu&&!open&&setContextDeleteTask(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader><AlertDialogTitle>{t.deleteTaskTitle}</AlertDialogTitle><AlertDialogDescription><strong>{contextDeleteTask?.title}</strong><br/>{t.deleteTaskDescription}</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel disabled={deletingFromMenu}>{t.cancel}</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={deletingFromMenu} onClick={async()=>{if(!contextDeleteTask)return;setDeletingFromMenu(true);try{await api.deleteTask(workspaceId,contextDeleteTask.id);setContextDeleteTask(null);await reload();toast.success(lang==='zh'?'任务已删除':'Task deleted')}catch(reason){setError(reason instanceof Error?reason.message:(lang==='zh'?'删除失败':'Delete failed'))}finally{setDeletingFromMenu(false)}}}>{deletingFromMenu?(lang==='zh'?'删除中…':'Deleting…'):t.deleteTask}</AlertDialogAction></AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <TaskImportDialog file={importFile} preview={importPreview} mapping={importMapping} busy={importBusy} en={lang==='en'} onClose={closeTaskImport} onMappingChange={changeImportMapping} onRefresh={()=>importFile&&importMapping&&void previewTaskImport(importFile,importMapping)} onImport={()=>void confirmTaskImport()}/>
       <CreateDialog
         kind={creating}
