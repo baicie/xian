@@ -41,13 +41,13 @@ import {
   TaskKind,
   filterTasks,
   moveTask,
-} from "./board";
-import { api, type GitHubReference, type TaskColumnRole, type TaskImportPreview, type TaskWorkbookMapping } from "./api";
-import { createTaskTypeFields } from "./taskFields";
-import AuthScreen from "./AuthScreen";
-import InviteScreen from "./InviteScreen";
-import SetupScreen from "./SetupScreen";
-import ChoiceSelect from "./components/ChoiceSelect";
+} from "@/models/board";
+import { api, type GitHubReference, type TaskColumnRole, type TaskImportPreview, type TaskWorkbookMapping } from "@/api";
+import { createTaskTypeFields } from "@/models/taskFields";
+import AuthScreen from "@/pages/AuthScreen";
+import InviteScreen from "@/pages/InviteScreen";
+import SetupScreen from "@/pages/SetupScreen";
+import ChoiceSelect from "@/components/ChoiceSelect";
 import {
   appPaths,
   getProjectIdFromPath,
@@ -62,18 +62,18 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "./components/ui/alert-dialog";
+} from "@/components/ui/alert-dialog";
 
-const WorkspacePage = lazy(() => import("./WorkspacePage"));
+const WorkspacePage = lazy(() => import("@/pages/WorkspacePage"));
 import {
   Avatar,
   AvatarFallback,
   AvatarGroup,
   AvatarGroupCount,
-} from "./components/ui/avatar";
-import { Badge } from "./components/ui/badge";
-import { Button } from "./components/ui/button";
-import { Checkbox } from "./components/ui/checkbox";
+} from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -81,7 +81,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "./components/ui/dialog";
+} from "@/components/ui/dialog";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -91,7 +91,7 @@ import {
   ContextMenuSubContent,
   ContextMenuSubTrigger,
   ContextMenuTrigger,
-} from "./components/ui/context-menu";
+} from "@/components/ui/context-menu";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -100,29 +100,29 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "./components/ui/dropdown-menu";
+} from "@/components/ui/dropdown-menu";
 import {
   Empty,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-} from "./components/ui/empty";
+} from "@/components/ui/empty";
 import {
   Field,
   FieldDescription,
   FieldError,
   FieldGroup,
   FieldLabel,
-} from "./components/ui/field";
-import { Input } from "./components/ui/input";
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupButton,
   InputGroupInput,
-} from "./components/ui/input-group";
-import { Kbd } from "./components/ui/kbd";
-import { Textarea } from "./components/ui/textarea";
+} from "@/components/ui/input-group";
+import { Kbd } from "@/components/ui/kbd";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Sheet,
   SheetContent,
@@ -130,8 +130,8 @@ import {
   SheetFooter,
   SheetHeader,
   SheetTitle,
-} from "./components/ui/sheet";
-import { Toaster } from "./components/ui/sonner";
+} from "@/components/ui/sheet";
+import { Toaster } from "@/components/ui/sonner";
 import {
   Sidebar as ShadcnSidebar,
   SidebarContent,
@@ -141,20 +141,20 @@ import {
   SidebarProvider,
   SidebarRail,
   SidebarTrigger,
-} from "./components/ui/sidebar";
+} from "@/components/ui/sidebar";
 import {
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from "./components/ui/breadcrumb";
-import { ToggleGroup, ToggleGroupItem } from "./components/ui/toggle-group";
-import TaskComments from "./components/tasks/TaskComments";
-import TaskSubtasks from "./components/tasks/TaskSubtasks";
-import TaskTypeFieldsEditor from "./components/tasks/TaskTypeFields";
-import TaskWorkflow from "./components/tasks/TaskWorkflow";
-import { commonTransitionTargets, transitionsForTask, workflowTemplateOptions, type WorkflowColumn, type WorkflowTemplateKey, type WorkflowTransition } from "./workflow";
+} from "@/components/ui/breadcrumb";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import TaskComments from "@/components/tasks/TaskComments";
+import TaskSubtasks from "@/components/tasks/TaskSubtasks";
+import TaskTypeFieldsEditor from "@/components/tasks/TaskTypeFields";
+import TaskWorkflow from "@/components/tasks/TaskWorkflow";
+import { commonTransitionTargets, transitionsForTask, workflowTemplateOptions, type WorkflowColumn, type WorkflowTemplateKey, type WorkflowTransition } from "@/models/workflow";
 
 type Lang = "zh" | "en";
 type Theme = "light" | "dark";

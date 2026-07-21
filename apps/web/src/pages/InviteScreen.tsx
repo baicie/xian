@@ -1,14 +1,14 @@
 import { FormEvent, useEffect, useState } from "react";
 import { ArrowRight } from "lucide-react";
-import { api } from "./api";
-import { Button } from "./components/ui/button";
+import { api } from "@/api";
+import { Button } from "@/components/ui/button";
 import {
   Field,
   FieldError,
   FieldGroup,
   FieldLabel,
-} from "./components/ui/field";
-import { Input } from "./components/ui/input";
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 
 type InvitePreview = {
   workspaceName: string;

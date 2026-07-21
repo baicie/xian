@@ -1,5 +1,5 @@
-import type { TaskKind } from '@/board'
-import type { BugSeverity, TaskTypeFields } from '@/taskFields'
+import type { TaskKind } from '@/models/board'
+import type { BugSeverity, TaskTypeFields } from '@/models/taskFields'
 import ChoiceSelect from '@/components/ChoiceSelect'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'

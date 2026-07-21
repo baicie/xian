@@ -13,7 +13,8 @@
 
 ## Frontend Structure
 
-- Organize frontend code by technical responsibility: route-level screens in `apps/web/src/pages`, reusable React composition in `apps/web/src/components`, non-UI helpers and caches in `apps/web/src/lib`, hooks in `apps/web/src/hooks`, and API access in `apps/web/src/api.ts`.
+- Organize frontend code by technical responsibility: application shell and route definitions in `apps/web/src/app`, API clients and transport types in `apps/web/src/api`, pure domain models in `apps/web/src/models`, route-level screens in `apps/web/src/pages`, reusable React composition in `apps/web/src/components`, non-UI helpers and caches in `apps/web/src/lib`, and hooks in `apps/web/src/hooks`.
 - Group related reusable components below `src/components/<area>` when useful, but do not mix pages, API code, state helpers, and UI components in one domain directory.
 - Do not introduce a generic `src/features` directory or top-level domain folders that combine multiple technical responsibilities.
 - Keep shadcn primitives in `src/components/ui`.
+- Keep the `apps/web/src` root limited to `main.tsx`, `styles.css`, and `vite-env.d.ts`. New source files must be placed in the appropriate responsibility directory above.

@@ -17,12 +17,12 @@ import {
   Users,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { Task } from "./board";
-import { api, type AuthConfig, type Notification } from "./api";
-import ChoiceSelect from "./components/ChoiceSelect";
-import { Avatar, AvatarFallback } from "./components/ui/avatar";
-import { Badge } from "./components/ui/badge";
-import { Button } from "./components/ui/button";
+import type { Task } from "@/models/board";
+import { api, type AuthConfig, type Notification } from "@/api";
+import ChoiceSelect from "@/components/ChoiceSelect";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardAction,
@@ -30,7 +30,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-} from "./components/ui/card";
+} from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -38,31 +38,31 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "./components/ui/dialog";
+} from "@/components/ui/dialog";
 import {
   Empty,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
-} from "./components/ui/empty";
+} from "@/components/ui/empty";
 import {
   Field,
   FieldDescription,
   FieldError,
   FieldGroup,
   FieldLabel,
-} from "./components/ui/field";
-import { Input } from "./components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
-import McpTokensPanel from "./components/settings/McpTokensPanel";
-import TransferPanel from "./components/settings/TransferPanel";
-import GitHubPanel from "./components/settings/GitHubPanel";
-import AssetsPanel from "./components/settings/AssetsPanel";
-import AuditLogPanel from "./components/settings/AuditLogPanel";
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import McpTokensPanel from "@/components/settings/McpTokensPanel";
+import TransferPanel from "@/components/settings/TransferPanel";
+import GitHubPanel from "@/components/settings/GitHubPanel";
+import AssetsPanel from "@/components/settings/AssetsPanel";
+import AuditLogPanel from "@/components/settings/AuditLogPanel";
 
-const DocumentsPage = lazy(() => import("./pages/DocumentsPage"));
-const PlansPage = lazy(() => import("./pages/PlansPage"));
+const DocumentsPage = lazy(() => import("@/pages/DocumentsPage"));
+const PlansPage = lazy(() => import("@/pages/PlansPage"));
 
 export type Page =
   "overview" | "inbox" | "tasks" | "calendar" | "plans" | "documents" | "archived" | "members" | "settings";
