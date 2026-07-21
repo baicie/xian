@@ -25,6 +25,41 @@ test('keeps workspace routes available when the workspace has no projects', asyn
   await expect(page.getByRole('heading', { name: '设置' })).toBeVisible()
 })
 
+test('opens the document context menu at the pointer position', async ({ page }) => {
+  await page.route('**/api/v1/**', async route => {
+    const pathname = new URL(route.request().url()).pathname
+    const responses: Record<string, unknown> = {
+      '/api/v1/auth/me': { user: { id: 'user-1', name: '测试用户' }, csrfToken: 'csrf' },
+      '/api/v1/workspaces': [{ id: 'workspace-1', name: '测试空间', slug: 'test', role: 'OWNER' }],
+      '/api/v1/workspaces/workspace-1/projects': [],
+      '/api/v1/workspaces/workspace-1/members': [{ id: 'user-1', name: '测试用户', email: 'test@example.com', role: 'OWNER', disabledAt: null }],
+      '/api/v1/workspaces/workspace-1/documents': [],
+      '/api/v1/workspaces/workspace-1/documents/folders': [],
+      '/api/v1/auth/config': { registrationMode: 'admin_only', allowWorkspaceCreate: true, bootstrapAvailable: false },
+    }
+    const body = responses[pathname]
+    await route.fulfill({
+      status: body === undefined ? 404 : 200,
+      contentType: 'application/json',
+      body: JSON.stringify(body ?? { message: `Unhandled request: ${pathname}` }),
+    })
+  })
+
+  await page.goto('/documents')
+  await expect(page.getByRole('heading', { name: '设计文档' })).toBeVisible()
+
+  const documentList = page.locator('.document-list')
+  const listBox = await documentList.boundingBox()
+  expect(listBox).not.toBeNull()
+  const position = { x: 80, y: 120 }
+  await documentList.click({ button: 'right', position })
+
+  const menuBox = await page.getByRole('menu').boundingBox()
+  expect(menuBox).not.toBeNull()
+  expect(menuBox!.x).toBeCloseTo(listBox!.x + position.x, 0)
+  expect(menuBox!.y).toBeCloseTo(listBox!.y + position.y, 0)
+})
+
 test('registers a workspace, creates a task, and opens a document editor', async ({ page }) => {
   const pageErrors: Error[] = []
   page.on('pageerror', error => pageErrors.push(error))
