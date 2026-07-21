@@ -18,3 +18,11 @@
 - Do not introduce a generic `src/features` directory or top-level domain folders that combine multiple technical responsibilities.
 - Keep shadcn primitives in `src/components/ui`.
 - Keep the `apps/web/src` root limited to `main.tsx`, `styles.css`, and `vite-env.d.ts`. New source files must be placed in the appropriate responsibility directory above.
+
+## Code Quality
+
+- Format supported project files with Prettier. Do not manually maintain a competing formatting style.
+- Run `pnpm format` after broad edits and `pnpm format:check` before committing.
+- Run `pnpm lint` before committing. Fix errors and warnings rather than disabling rules unless the exception is narrowly scoped and documented in code.
+- Keep ESLint responsible for correctness and maintainability rules; keep formatting rules in Prettier. Do not add ESLint formatting rules that conflict with `eslint-config-prettier`.
+- New source file types must be covered by `eslint.config.mjs` and `.prettierignore` as appropriate.

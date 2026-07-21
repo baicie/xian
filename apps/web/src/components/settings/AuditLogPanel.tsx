@@ -19,7 +19,9 @@ const actionLabels: Record<string, { en: string; zh: string }> = {
 function auditDetail(log: AuditLog) {
   const data = log.afterData
   if (!data) return log.entityType
-  const parts = [data.email, data.name, data.role].filter((value): value is string => typeof value === 'string')
+  const parts = [data.email, data.name, data.role].filter(
+    (value): value is string => typeof value === 'string',
+  )
   return parts.length ? parts.join(' · ') : log.entityType
 }
 
@@ -29,21 +31,40 @@ export default function AuditLogPanel({ workspaceId, en }: { workspaceId: string
 
   useEffect(() => {
     setState('loading')
-    void api.auditLogs(workspaceId).then((items) => {
-      setLogs(items)
-      setState('ready')
-    }).catch(() => setState('error'))
+    void api
+      .auditLogs(workspaceId)
+      .then((items) => {
+        setLogs(items)
+        setState('ready')
+      })
+      .catch(() => setState('error'))
   }, [workspaceId])
 
   return (
     <Card className="settings-panel">
       <CardHeader>
-        <CardTitle><ShieldCheck />{en ? 'Audit log' : '审计日志'}</CardTitle>
+        <CardTitle>
+          <ShieldCheck />
+          {en ? 'Audit log' : '审计日志'}
+        </CardTitle>
       </CardHeader>
       <CardContent>
-        {state === 'loading' ? <p className="audit-state" role="status">{en ? 'Loading…' : '加载中…'}</p> : null}
-        {state === 'error' ? <p className="audit-state is-error" role="alert">{en ? 'Unable to load audit log' : '无法加载审计日志'}</p> : null}
-        {state === 'ready' && !logs.length ? <p className="audit-state"><History />{en ? 'No audit events' : '暂无审计记录'}</p> : null}
+        {state === 'loading' ? (
+          <p className="audit-state" role="status">
+            {en ? 'Loading…' : '加载中…'}
+          </p>
+        ) : null}
+        {state === 'error' ? (
+          <p className="audit-state is-error" role="alert">
+            {en ? 'Unable to load audit log' : '无法加载审计日志'}
+          </p>
+        ) : null}
+        {state === 'ready' && !logs.length ? (
+          <p className="audit-state">
+            <History />
+            {en ? 'No audit events' : '暂无审计记录'}
+          </p>
+        ) : null}
         {state === 'ready' && logs.length ? (
           <div className="audit-list">
             {logs.map((log) => {

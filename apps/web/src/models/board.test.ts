@@ -16,6 +16,8 @@ describe('board operations', () => {
   it('inserts a new task and updates an existing one', () => {
     const next = { ...seedTasks[0]!, id: '9999', title: '新任务' }
     expect(saveTask(seedTasks, next)).toHaveLength(seedTasks.length + 1)
-    expect(saveTask(seedTasks, { ...seedTasks[0]!, title: '已更新' })).toHaveLength(seedTasks.length)
+    expect(saveTask(seedTasks, { ...seedTasks[0]!, title: '已更新' })).toHaveLength(
+      seedTasks.length,
+    )
   })
 })

@@ -7,10 +7,14 @@ describe('login rate limiting', () => {
     const auth = new AuthService(db as never)
 
     for (let attempt = 0; attempt < 10; attempt += 1) {
-      await expect(auth.login('member@example.com', 'wrong-password', '127.0.0.1')).rejects.toMatchObject({ status: 401 })
+      await expect(
+        auth.login('member@example.com', 'wrong-password', '127.0.0.1'),
+      ).rejects.toMatchObject({ status: 401 })
     }
 
-    await expect(auth.login('member@example.com', 'wrong-password', '127.0.0.1')).rejects.toMatchObject({
+    await expect(
+      auth.login('member@example.com', 'wrong-password', '127.0.0.1'),
+    ).rejects.toMatchObject({
       status: 429,
       response: { code: 'LOGIN_RATE_LIMIT' },
     })
@@ -21,9 +25,13 @@ describe('login rate limiting', () => {
     const auth = new AuthService(db as never)
 
     for (let attempt = 0; attempt < 10; attempt += 1) {
-      await expect(auth.login('first@example.com', 'wrong-password', '127.0.0.1')).rejects.toMatchObject({ status: 401 })
+      await expect(
+        auth.login('first@example.com', 'wrong-password', '127.0.0.1'),
+      ).rejects.toMatchObject({ status: 401 })
     }
 
-    await expect(auth.login('second@example.com', 'wrong-password', '127.0.0.1')).rejects.toMatchObject({ status: 401 })
+    await expect(
+      auth.login('second@example.com', 'wrong-password', '127.0.0.1'),
+    ).rejects.toMatchObject({ status: 401 })
   })
 })

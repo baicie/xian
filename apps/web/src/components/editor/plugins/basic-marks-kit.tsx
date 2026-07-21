@@ -1,4 +1,4 @@
-'use client';
+'use client'
 
 import {
   BoldRules,
@@ -10,7 +10,7 @@ import {
   SubscriptRules,
   SuperscriptRules,
   UnderlineRules,
-} from '@platejs/basic-nodes';
+} from '@platejs/basic-nodes'
 import {
   BoldPlugin,
   CodePlugin,
@@ -21,11 +21,11 @@ import {
   SubscriptPlugin,
   SuperscriptPlugin,
   UnderlinePlugin,
-} from '@platejs/basic-nodes/react';
+} from '@platejs/basic-nodes/react'
 
-import { CodeLeaf } from '@/components/ui/code-node';
-import { HighlightLeaf } from '@/components/ui/highlight-node';
-import { KbdLeaf } from '@/components/ui/kbd-node';
+import { CodeLeaf } from '@/components/ui/code-node'
+import { HighlightLeaf } from '@/components/ui/highlight-node'
+import { KbdLeaf } from '@/components/ui/kbd-node'
 
 export const BasicMarksKit = [
   BoldPlugin.configure({
@@ -39,10 +39,7 @@ export const BasicMarksKit = [
     ],
   }),
   ItalicPlugin.configure({
-    inputRules: [
-      ItalicRules.markdown({ variant: '*' }),
-      ItalicRules.markdown({ variant: '_' }),
-    ],
+    inputRules: [ItalicRules.markdown({ variant: '*' }), ItalicRules.markdown({ variant: '_' })],
   }),
   UnderlinePlugin.configure({
     inputRules: [UnderlineRules.markdown()],
@@ -73,4 +70,4 @@ export const BasicMarksKit = [
     shortcuts: { toggle: { keys: 'mod+shift+h' } },
   }),
   KbdPlugin.withComponent(KbdLeaf),
-];
+]

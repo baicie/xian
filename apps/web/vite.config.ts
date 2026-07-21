@@ -4,9 +4,13 @@ import tailwindcss from '@tailwindcss/vite'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 
-function gitCommit(fallback?:string) {
-  if(fallback)return fallback
-  try{return execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()}catch{return'unknown'}
+function gitCommit(fallback?: string) {
+  if (fallback) return fallback
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+  } catch {
+    return 'unknown'
+  }
 }
 
 export default defineConfig(({ mode }) => {

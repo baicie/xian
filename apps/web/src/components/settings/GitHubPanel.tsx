@@ -1,39 +1,485 @@
-import { FormEvent, useEffect, useState } from 'react'
-import { AlertTriangle, CheckCircle2, CircleHelp, ExternalLink, GitFork, RefreshCw, Settings2, ShieldCheck, Trash2, UploadCloud, XCircle } from 'lucide-react'
+import { FormEvent, useCallback, useEffect, useState } from 'react'
+import {
+  AlertTriangle,
+  CheckCircle2,
+  CircleHelp,
+  ExternalLink,
+  GitFork,
+  RefreshCw,
+  Settings2,
+  ShieldCheck,
+  Trash2,
+  UploadCloud,
+  XCircle,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/api'
 import ChoiceSelect from '@/components/ChoiceSelect'
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
-type Project={id:string;name:string}
-export default function GitHubPanel({workspaceId,projects,en,onTasksChanged}:{workspaceId:string;projects:Project[];en:boolean;onTasksChanged:()=>Promise<void>}) {
-  const [config,setConfig]=useState<Awaited<ReturnType<typeof api.githubIntegration>>>(null),[conflicts,setConflicts]=useState<Awaited<ReturnType<typeof api.githubConflicts>>>([]),[diagnostics,setDiagnostics]=useState<Awaited<ReturnType<typeof api.githubDiagnostics>>|null>(null),[configuring,setConfiguring]=useState(false),[removing,setRemoving]=useState(false),[busy,setBusy]=useState(false)
-  const load=async()=>{const next=await api.githubIntegration(workspaceId);setConfig(next);setConflicts(next?await api.githubConflicts(workspaceId):[]);setDiagnostics(null)}
-  useEffect(()=>{void load()},[workspaceId])
-  const sync=async(direction:'push'|'pull')=>{setBusy(true);try{if(direction==='push'){const result=await api.pushGitHub(workspaceId);toast.success(en?`Pushed ${result.tasks} tasks and ${result.documents} documents`:`已推送 ${result.tasks} 个任务、${result.documents} 篇文档`)}else{const result=await api.pullGitHub(workspaceId);await onTasksChanged();toast.success(en?`Imported ${result.imported}; ${result.conflicts} conflicts`:`导入 ${result.imported} 项，发现 ${result.conflicts} 个冲突`)}await load()}finally{setBusy(false)}}
-  const checkConnection=async()=>{setBusy(true);try{const result=await api.githubDiagnostics(workspaceId);setDiagnostics(result);toast.success(en?'Connection check completed':'连接检查完成')}catch(reason){setDiagnostics(null);toast.error(reason instanceof Error?reason.message:(en?'Connection check failed':'连接检查失败'))}finally{setBusy(false)}}
-  const resolve=async(id:string,resolution:'KEEP_LOCAL'|'USE_GITHUB')=>{await api.resolveGitHubConflict(workspaceId,id,resolution);await load();await onTasksChanged();toast.success(en?'Conflict resolved':'冲突已处理')}
-  return <Card className="settings-panel"><CardHeader><CardTitle><GitFork/>GitHub</CardTitle><CardDescription>{en?'Mirror project tasks to Issues and design documents to Markdown files. PostgreSQL remains authoritative.':'将项目任务镜像为 Issues、设计文档镜像为 Markdown；PostgreSQL 仍是主数据源。'}</CardDescription></CardHeader><CardContent>{config?<><div className="github-connection"><span><strong>{config.owner}/{config.repo}</strong><small>{projects.find(project=>project.id===config.projectId)?.name} · token ••••{config.tokenLast4}</small></span><Badge>{en?'Connected':'已连接'}</Badge><Button variant="outline" size="sm" disabled={busy} onClick={()=>void checkConnection()}><ShieldCheck data-icon="inline-start"/>{en?'Check':'检查连接'}</Button><Button variant="outline" size="sm" onClick={()=>setConfiguring(true)}><Settings2 data-icon="inline-start"/>{en?'Configure':'配置'}</Button><Button variant="ghost" size="icon-sm" aria-label={en?'Disconnect':'断开连接'} onClick={()=>setRemoving(true)}><Trash2/></Button></div>{diagnostics?<div className="github-diagnostics"><DiagnosticItem ok={diagnostics.ok} label={en?'Repository accessible':'仓库可访问'}/><DiagnosticItem ok={diagnostics.issuesReadable} label={en?'Issues readable':'可读取 Issues'}/><DiagnosticItem ok={diagnostics.repositoryWritable} label={en?'Repository writable':'具备仓库写权限'}/><small>{new Date(diagnostics.checkedAt).toLocaleString()}</small></div>:null}<div className="github-actions"><Button variant="outline" disabled={busy||!config.pullIssues} onClick={()=>void sync('pull')}><RefreshCw data-icon="inline-start"/>{en?'Pull Issues':'拉取 Issues'}</Button><Button disabled={busy||(!config.syncTasks&&!config.syncDocuments)} onClick={()=>void sync('push')}><UploadCloud data-icon="inline-start"/>{en?'Push mirror':'推送镜像'}</Button></div>{conflicts.length?<div className="conflict-list"><h3><AlertTriangle/>{en?'Sync conflicts':'同步冲突'} <Badge variant="destructive">{conflicts.length}</Badge></h3>{conflicts.map(conflict=><div key={conflict.id}><span><strong>{conflict.localTitle}</strong><small>{conflict.remoteRef} → {conflict.remoteData.title}</small></span><Button size="sm" variant="outline" onClick={()=>void resolve(conflict.id,'KEEP_LOCAL')}>{en?'Keep local':'保留本地'}</Button><Button size="sm" onClick={()=>void resolve(conflict.id,'USE_GITHUB')}>{en?'Use GitHub':'采用 GitHub'}</Button></div>)}</div>:null}</>:<div className="integration-empty"><GitFork/><span><strong>{en?'No repository connected':'尚未连接仓库'}</strong><small>{en?'Use a fine-grained token with Issues and Contents access.':'请使用具备 Issues 与 Contents 权限的细粒度令牌。'}</small></span><Button onClick={()=>setConfiguring(true)}>{en?'Connect repository':'连接仓库'}</Button></div>}</CardContent>
-    <GitHubDialog open={configuring} onOpenChange={setConfiguring} workspaceId={workspaceId} projects={projects} current={config} en={en} onSaved={load}/>
-    <AlertDialog open={removing} onOpenChange={setRemoving}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{en?'Disconnect GitHub?':'断开 GitHub 连接？'}</AlertDialogTitle><AlertDialogDescription>{en?'Local projects and tasks are not deleted. Sync mappings and queued conflicts will be removed.':'不会删除本地项目与任务，但同步映射和冲突队列会被清除。'}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{en?'Cancel':'取消'}</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={async()=>{await api.removeGitHub(workspaceId);setRemoving(false);await load()}}>{en?'Disconnect':'断开连接'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
-  </Card>
+type Project = { id: string; name: string }
+export default function GitHubPanel({
+  workspaceId,
+  projects,
+  en,
+  onTasksChanged,
+}: {
+  workspaceId: string
+  projects: Project[]
+  en: boolean
+  onTasksChanged: () => Promise<void>
+}) {
+  const [config, setConfig] = useState<Awaited<ReturnType<typeof api.githubIntegration>>>(null),
+    [conflicts, setConflicts] = useState<Awaited<ReturnType<typeof api.githubConflicts>>>([]),
+    [diagnostics, setDiagnostics] = useState<Awaited<
+      ReturnType<typeof api.githubDiagnostics>
+    > | null>(null),
+    [configuring, setConfiguring] = useState(false),
+    [removing, setRemoving] = useState(false),
+    [busy, setBusy] = useState(false)
+  const load = useCallback(async () => {
+    const next = await api.githubIntegration(workspaceId)
+    setConfig(next)
+    setConflicts(next ? await api.githubConflicts(workspaceId) : [])
+    setDiagnostics(null)
+  }, [workspaceId])
+  useEffect(() => {
+    void load()
+  }, [load])
+  const sync = async (direction: 'push' | 'pull') => {
+    setBusy(true)
+    try {
+      if (direction === 'push') {
+        const result = await api.pushGitHub(workspaceId)
+        toast.success(
+          en
+            ? `Pushed ${result.tasks} tasks and ${result.documents} documents`
+            : `已推送 ${result.tasks} 个任务、${result.documents} 篇文档`,
+        )
+      } else {
+        const result = await api.pullGitHub(workspaceId)
+        await onTasksChanged()
+        toast.success(
+          en
+            ? `Imported ${result.imported}; ${result.conflicts} conflicts`
+            : `导入 ${result.imported} 项，发现 ${result.conflicts} 个冲突`,
+        )
+      }
+      await load()
+    } finally {
+      setBusy(false)
+    }
+  }
+  const checkConnection = async () => {
+    setBusy(true)
+    try {
+      const result = await api.githubDiagnostics(workspaceId)
+      setDiagnostics(result)
+      toast.success(en ? 'Connection check completed' : '连接检查完成')
+    } catch (reason) {
+      setDiagnostics(null)
+      toast.error(
+        reason instanceof Error ? reason.message : en ? 'Connection check failed' : '连接检查失败',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+  const resolve = async (id: string, resolution: 'KEEP_LOCAL' | 'USE_GITHUB') => {
+    await api.resolveGitHubConflict(workspaceId, id, resolution)
+    await load()
+    await onTasksChanged()
+    toast.success(en ? 'Conflict resolved' : '冲突已处理')
+  }
+  return (
+    <Card className="settings-panel">
+      <CardHeader>
+        <CardTitle>
+          <GitFork />
+          GitHub
+        </CardTitle>
+        <CardDescription>
+          {en
+            ? 'Mirror project tasks to Issues and design documents to Markdown files. PostgreSQL remains authoritative.'
+            : '将项目任务镜像为 Issues、设计文档镜像为 Markdown；PostgreSQL 仍是主数据源。'}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {config ? (
+          <>
+            <div className="github-connection">
+              <span>
+                <strong>
+                  {config.owner}/{config.repo}
+                </strong>
+                <small>
+                  {projects.find((project) => project.id === config.projectId)?.name} · token ••••
+                  {config.tokenLast4}
+                </small>
+              </span>
+              <Badge>{en ? 'Connected' : '已连接'}</Badge>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={() => void checkConnection()}
+              >
+                <ShieldCheck data-icon="inline-start" />
+                {en ? 'Check' : '检查连接'}
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setConfiguring(true)}>
+                <Settings2 data-icon="inline-start" />
+                {en ? 'Configure' : '配置'}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={en ? 'Disconnect' : '断开连接'}
+                onClick={() => setRemoving(true)}
+              >
+                <Trash2 />
+              </Button>
+            </div>
+            {diagnostics ? (
+              <div className="github-diagnostics">
+                <DiagnosticItem
+                  ok={diagnostics.ok}
+                  label={en ? 'Repository accessible' : '仓库可访问'}
+                />
+                <DiagnosticItem
+                  ok={diagnostics.issuesReadable}
+                  label={en ? 'Issues readable' : '可读取 Issues'}
+                />
+                <DiagnosticItem
+                  ok={diagnostics.repositoryWritable}
+                  label={en ? 'Repository writable' : '具备仓库写权限'}
+                />
+                <small>{new Date(diagnostics.checkedAt).toLocaleString()}</small>
+              </div>
+            ) : null}
+            <div className="github-actions">
+              <Button
+                variant="outline"
+                disabled={busy || !config.pullIssues}
+                onClick={() => void sync('pull')}
+              >
+                <RefreshCw data-icon="inline-start" />
+                {en ? 'Pull Issues' : '拉取 Issues'}
+              </Button>
+              <Button
+                disabled={busy || (!config.syncTasks && !config.syncDocuments)}
+                onClick={() => void sync('push')}
+              >
+                <UploadCloud data-icon="inline-start" />
+                {en ? 'Push mirror' : '推送镜像'}
+              </Button>
+            </div>
+            {conflicts.length ? (
+              <div className="conflict-list">
+                <h3>
+                  <AlertTriangle />
+                  {en ? 'Sync conflicts' : '同步冲突'}{' '}
+                  <Badge variant="destructive">{conflicts.length}</Badge>
+                </h3>
+                {conflicts.map((conflict) => (
+                  <div key={conflict.id}>
+                    <span>
+                      <strong>{conflict.localTitle}</strong>
+                      <small>
+                        {conflict.remoteRef} → {conflict.remoteData.title}
+                      </small>
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void resolve(conflict.id, 'KEEP_LOCAL')}
+                    >
+                      {en ? 'Keep local' : '保留本地'}
+                    </Button>
+                    <Button size="sm" onClick={() => void resolve(conflict.id, 'USE_GITHUB')}>
+                      {en ? 'Use GitHub' : '采用 GitHub'}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <div className="integration-empty">
+            <GitFork />
+            <span>
+              <strong>{en ? 'No repository connected' : '尚未连接仓库'}</strong>
+              <small>
+                {en
+                  ? 'Use a fine-grained token with Issues and Contents access.'
+                  : '请使用具备 Issues 与 Contents 权限的细粒度令牌。'}
+              </small>
+            </span>
+            <Button onClick={() => setConfiguring(true)}>
+              {en ? 'Connect repository' : '连接仓库'}
+            </Button>
+          </div>
+        )}
+      </CardContent>
+      <GitHubDialog
+        open={configuring}
+        onOpenChange={setConfiguring}
+        workspaceId={workspaceId}
+        projects={projects}
+        current={config}
+        en={en}
+        onSaved={load}
+      />
+      <AlertDialog open={removing} onOpenChange={setRemoving}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{en ? 'Disconnect GitHub?' : '断开 GitHub 连接？'}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {en
+                ? 'Local projects and tasks are not deleted. Sync mappings and queued conflicts will be removed.'
+                : '不会删除本地项目与任务，但同步映射和冲突队列会被清除。'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{en ? 'Cancel' : '取消'}</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={async () => {
+                await api.removeGitHub(workspaceId)
+                setRemoving(false)
+                await load()
+              }}
+            >
+              {en ? 'Disconnect' : '断开连接'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </Card>
+  )
 }
 
-function DiagnosticItem({ok,label}:{ok:boolean;label:string}){return <span className={ok?'is-ok':'is-error'}>{ok?<CheckCircle2/>:<XCircle/>}{label}</span>}
+function DiagnosticItem({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <span className={ok ? 'is-ok' : 'is-error'}>
+      {ok ? <CheckCircle2 /> : <XCircle />}
+      {label}
+    </span>
+  )
+}
 
-function GitHubDialog({open,onOpenChange,workspaceId,projects,current,en,onSaved}:{open:boolean;onOpenChange:(open:boolean)=>void;workspaceId:string;projects:Project[];current:Awaited<ReturnType<typeof api.githubIntegration>>;en:boolean;onSaved:()=>Promise<void>}) {
-  const initialRepo=current?`https://github.com/${current.owner}/${current.repo}`:''
-  const [projectId,setProjectId]=useState(current?.projectId||projects[0]?.id||''),[repoUrl,setRepoUrl]=useState(initialRepo),[syncTasks,setSyncTasks]=useState(current?.syncTasks??true),[syncDocuments,setSyncDocuments]=useState(current?.syncDocuments??true),[pullIssues,setPullIssues]=useState(current?.pullIssues??true),[busy,setBusy]=useState(false),[error,setError]=useState('')
-  useEffect(()=>{if(open){setProjectId(current?.projectId||projects[0]?.id||'');setRepoUrl(current?`https://github.com/${current.owner}/${current.repo}`:'');setSyncTasks(current?.syncTasks??true);setSyncDocuments(current?.syncDocuments??true);setPullIssues(current?.pullIssues??true)}},[open,current,projects])
-  const repoMatch=repoUrl.trim().match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/?$/i),repoOwner=repoMatch?.[1],repoName=repoMatch?.[2]?.replace(/\.git$/i,''),patUrl=repoOwner&&repoName?`https://github.com/settings/personal-access-tokens/new?${new URLSearchParams({name:`闲序 ${repoOwner}/${repoName}`,description:`闲序 integration for ${repoOwner}/${repoName}`,target_name:repoOwner,contents:'write',issues:'write'}).toString()}`:'https://github.com/settings/personal-access-tokens/new'
-  const submit=async(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();setBusy(true);setError('');const data=new FormData(event.currentTarget);try{await api.configureGitHub(workspaceId,{repoUrl:String(data.get('repoUrl')),token:String(data.get('token')),projectId,syncTasks,syncDocuments,pullIssues});onOpenChange(false);await onSaved();toast.success(en?'Repository connected':'仓库已连接')}catch(reason){setError(reason instanceof Error?reason.message:'连接失败')}finally{setBusy(false)}}
-  return <TooltipProvider delay={250}><Dialog open={open} onOpenChange={onOpenChange}><DialogContent><form onSubmit={submit}><DialogHeader><DialogTitle>{en?'Connect GitHub repository':'连接 GitHub 仓库'}</DialogTitle><DialogDescription>{en?'The token is verified first, then encrypted with AES-256-GCM.':'令牌验证通过后会使用 AES-256-GCM 加密保存。'}</DialogDescription></DialogHeader><FieldGroup className="create-form"><Field><FieldLabel>{en?'Project':'项目'}</FieldLabel><ChoiceSelect label={en?'Project':'项目'} value={projectId} options={projects.map(project=>({value:project.id,label:project.name}))} onChange={setProjectId}/></Field><Field><FieldLabel htmlFor="github-repo">{en?'Repository URL':'仓库地址'}</FieldLabel><Input id="github-repo" name="repoUrl" type="url" required value={repoUrl} onChange={event=>setRepoUrl(event.target.value)} placeholder="https://github.com/owner/repo"/></Field><Field><FieldLabel>{en?'Sync scope':'同步范围'}</FieldLabel><div className="github-sync-options"><label><Checkbox checked={syncTasks} onCheckedChange={setSyncTasks}/><span><strong>{en?'Tasks to Issues':'任务同步到 Issues'}</strong><small>{en?'Create and update Issues from project tasks':'从项目任务创建或更新 Issues'}</small></span></label><label><Checkbox checked={syncDocuments} onCheckedChange={setSyncDocuments}/><span><strong>{en?'Documents to Markdown':'文档同步到 Markdown'}</strong><small>{en?'Write project documents into the repository':'将项目文档写入仓库'}</small></span></label><label><Checkbox checked={pullIssues} onCheckedChange={setPullIssues}/><span><strong>{en?'Import GitHub Issues':'拉取 GitHub Issues'}</strong><small>{en?'Import unmapped Issues as local tasks':'将未关联的 Issues 导入为本地任务'}</small></span></label></div></Field><Field data-invalid={Boolean(error)}><div className="field-label-help"><FieldLabel htmlFor="github-token">Fine-grained PAT</FieldLabel><Tooltip><TooltipTrigger render={<Button type="button" variant="ghost" size="icon-xs" aria-label={en?'About fine-grained personal access tokens':'Fine-grained PAT 说明'}/>}><CircleHelp/></TooltipTrigger><TooltipContent side="right"><span className="pat-help">{en?'A GitHub token limited to the selected repository. Grant Repository permissions: Contents (read/write) and Issues (read/write). After verification, the token is stored with AES-256-GCM encryption.':'用于访问所选 GitHub 仓库的细粒度令牌。创建时仅选择目标仓库，并授予 Repository permissions：Contents（读写）和 Issues（读写）。验证后使用 AES-256-GCM 加密保存。'}</span></TooltipContent></Tooltip></div><Input id="github-token" name="token" type="password" required autoComplete="off"/><FieldDescription>{en?'Required permissions: repository Contents and Issues read/write.':'所需权限：仓库 Contents 与 Issues 读写。'} <a className="pat-create-link" href={patUrl} target="_blank" rel="noreferrer">{en?'Create on GitHub':'前往 GitHub 创建'}<ExternalLink/></a></FieldDescription>{error?<p className="page-error">{error}</p>:null}</Field></FieldGroup><DialogFooter><Button type="button" variant="outline" onClick={()=>onOpenChange(false)}>{en?'Cancel':'取消'}</Button><Button type="submit" disabled={busy}>{busy?(en?'Verifying…':'验证中…'):(en?'Verify and connect':'验证并连接')}</Button></DialogFooter></form></DialogContent></Dialog></TooltipProvider>
+function GitHubDialog({
+  open,
+  onOpenChange,
+  workspaceId,
+  projects,
+  current,
+  en,
+  onSaved,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  workspaceId: string
+  projects: Project[]
+  current: Awaited<ReturnType<typeof api.githubIntegration>>
+  en: boolean
+  onSaved: () => Promise<void>
+}) {
+  const initialRepo = current ? `https://github.com/${current.owner}/${current.repo}` : ''
+  const [projectId, setProjectId] = useState(current?.projectId || projects[0]?.id || ''),
+    [repoUrl, setRepoUrl] = useState(initialRepo),
+    [syncTasks, setSyncTasks] = useState(current?.syncTasks ?? true),
+    [syncDocuments, setSyncDocuments] = useState(current?.syncDocuments ?? true),
+    [pullIssues, setPullIssues] = useState(current?.pullIssues ?? true),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState('')
+  useEffect(() => {
+    if (open) {
+      setProjectId(current?.projectId || projects[0]?.id || '')
+      setRepoUrl(current ? `https://github.com/${current.owner}/${current.repo}` : '')
+      setSyncTasks(current?.syncTasks ?? true)
+      setSyncDocuments(current?.syncDocuments ?? true)
+      setPullIssues(current?.pullIssues ?? true)
+    }
+  }, [open, current, projects])
+  const repoMatch = repoUrl.trim().match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/?$/i),
+    repoOwner = repoMatch?.[1],
+    repoName = repoMatch?.[2]?.replace(/\.git$/i, ''),
+    patUrl =
+      repoOwner && repoName
+        ? `https://github.com/settings/personal-access-tokens/new?${new URLSearchParams({ name: `闲序 ${repoOwner}/${repoName}`, description: `闲序 integration for ${repoOwner}/${repoName}`, target_name: repoOwner, contents: 'write', issues: 'write' }).toString()}`
+        : 'https://github.com/settings/personal-access-tokens/new'
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setBusy(true)
+    setError('')
+    const data = new FormData(event.currentTarget)
+    try {
+      await api.configureGitHub(workspaceId, {
+        repoUrl: String(data.get('repoUrl')),
+        token: String(data.get('token')),
+        projectId,
+        syncTasks,
+        syncDocuments,
+        pullIssues,
+      })
+      onOpenChange(false)
+      await onSaved()
+      toast.success(en ? 'Repository connected' : '仓库已连接')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '连接失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <TooltipProvider delay={250}>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent>
+          <form onSubmit={submit}>
+            <DialogHeader>
+              <DialogTitle>{en ? 'Connect GitHub repository' : '连接 GitHub 仓库'}</DialogTitle>
+              <DialogDescription>
+                {en
+                  ? 'The token is verified first, then encrypted with AES-256-GCM.'
+                  : '令牌验证通过后会使用 AES-256-GCM 加密保存。'}
+              </DialogDescription>
+            </DialogHeader>
+            <FieldGroup className="create-form">
+              <Field>
+                <FieldLabel>{en ? 'Project' : '项目'}</FieldLabel>
+                <ChoiceSelect
+                  label={en ? 'Project' : '项目'}
+                  value={projectId}
+                  options={projects.map((project) => ({ value: project.id, label: project.name }))}
+                  onChange={setProjectId}
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="github-repo">{en ? 'Repository URL' : '仓库地址'}</FieldLabel>
+                <Input
+                  id="github-repo"
+                  name="repoUrl"
+                  type="url"
+                  required
+                  value={repoUrl}
+                  onChange={(event) => setRepoUrl(event.target.value)}
+                  placeholder="https://github.com/owner/repo"
+                />
+              </Field>
+              <Field>
+                <FieldLabel>{en ? 'Sync scope' : '同步范围'}</FieldLabel>
+                <div className="github-sync-options">
+                  <label>
+                    <Checkbox checked={syncTasks} onCheckedChange={setSyncTasks} />
+                    <span>
+                      <strong>{en ? 'Tasks to Issues' : '任务同步到 Issues'}</strong>
+                      <small>
+                        {en
+                          ? 'Create and update Issues from project tasks'
+                          : '从项目任务创建或更新 Issues'}
+                      </small>
+                    </span>
+                  </label>
+                  <label>
+                    <Checkbox checked={syncDocuments} onCheckedChange={setSyncDocuments} />
+                    <span>
+                      <strong>{en ? 'Documents to Markdown' : '文档同步到 Markdown'}</strong>
+                      <small>
+                        {en ? 'Write project documents into the repository' : '将项目文档写入仓库'}
+                      </small>
+                    </span>
+                  </label>
+                  <label>
+                    <Checkbox checked={pullIssues} onCheckedChange={setPullIssues} />
+                    <span>
+                      <strong>{en ? 'Import GitHub Issues' : '拉取 GitHub Issues'}</strong>
+                      <small>
+                        {en
+                          ? 'Import unmapped Issues as local tasks'
+                          : '将未关联的 Issues 导入为本地任务'}
+                      </small>
+                    </span>
+                  </label>
+                </div>
+              </Field>
+              <Field data-invalid={Boolean(error)}>
+                <div className="field-label-help">
+                  <FieldLabel htmlFor="github-token">Fine-grained PAT</FieldLabel>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          aria-label={
+                            en
+                              ? 'About fine-grained personal access tokens'
+                              : 'Fine-grained PAT 说明'
+                          }
+                        />
+                      }
+                    >
+                      <CircleHelp />
+                    </TooltipTrigger>
+                    <TooltipContent side="right">
+                      <span className="pat-help">
+                        {en
+                          ? 'A GitHub token limited to the selected repository. Grant Repository permissions: Contents (read/write) and Issues (read/write). After verification, the token is stored with AES-256-GCM encryption.'
+                          : '用于访问所选 GitHub 仓库的细粒度令牌。创建时仅选择目标仓库，并授予 Repository permissions：Contents（读写）和 Issues（读写）。验证后使用 AES-256-GCM 加密保存。'}
+                      </span>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input id="github-token" name="token" type="password" required autoComplete="off" />
+                <FieldDescription>
+                  {en
+                    ? 'Required permissions: repository Contents and Issues read/write.'
+                    : '所需权限：仓库 Contents 与 Issues 读写。'}{' '}
+                  <a className="pat-create-link" href={patUrl} target="_blank" rel="noreferrer">
+                    {en ? 'Create on GitHub' : '前往 GitHub 创建'}
+                    <ExternalLink />
+                  </a>
+                </FieldDescription>
+                {error ? <p className="page-error">{error}</p> : null}
+              </Field>
+            </FieldGroup>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                {en ? 'Cancel' : '取消'}
+              </Button>
+              <Button type="submit" disabled={busy}>
+                {busy ? (en ? 'Verifying…' : '验证中…') : en ? 'Verify and connect' : '验证并连接'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </TooltipProvider>
+  )
 }
