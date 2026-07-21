@@ -1,5 +1,6 @@
 import type { Task } from './board'
 import { createTaskTypeFields, type TaskTypeFields } from './taskFields'
+import type { ProjectWorkflow, TaskTransitionEvent, WorkflowTemplateKey } from './workflow'
 
 export type DocumentKind = 'ARCHITECTURE' | 'REQUIREMENT' | 'DESIGN' | 'MEETING' | 'RETROSPECTIVE'
 export type WorkspaceDocument = { id:string;projectId:string|null;folderId:string|null;title:string;kind:DocumentKind;status:'DRAFT'|'PUBLISHED'|'ARCHIVED';content:string;version:number;createdAt:string;updatedAt:string }
@@ -51,10 +52,10 @@ export const api={
   workspaces(){return request<{id:string;name:string;slug:string;role:string}[]>('/workspaces')},
   createWorkspace(name:string){return request<{id:string;name:string;slug:string}>('/workspaces',{method:'POST',body:JSON.stringify({name})})},
   projects(workspaceId:string){return request<{id:string;name:string;code:string;color:string}[]>(`/workspaces/${workspaceId}/projects`)},
-  createProject(workspaceId:string,input:{name:string;code:string}){return request(`/workspaces/${workspaceId}/projects`,{method:'POST',body:JSON.stringify({...input,description:'',color:'#2367d1'})})},
+  createProject(workspaceId:string,input:{name:string;code:string;workflowTemplate?:WorkflowTemplateKey}){return request(`/workspaces/${workspaceId}/projects`,{method:'POST',body:JSON.stringify({...input,description:'',color:'#2367d1'})})},
   updateProject(workspaceId:string,projectId:string,input:{name:string}){return request<{id:string;name:string;code:string;color:string}>(`/workspaces/${workspaceId}/projects/${projectId}`,{method:'PATCH',body:JSON.stringify(input)})},
   deleteProject(workspaceId:string,projectId:string){return request(`/workspaces/${workspaceId}/projects/${projectId}`,{method:'DELETE'})},
-  columns(workspaceId:string,projectId:string){return request<{id:string;name:string;color:string}[]>(`/workspaces/${workspaceId}/projects/${projectId}/columns`)},
+  workflow(workspaceId:string,projectId:string){return request<ProjectWorkflow>(`/workspaces/${workspaceId}/projects/${projectId}/workflow`)},
   async tasks(workspaceId:string,projectId:string,archived=false){const result=await request<{data:RawTask[]}>(`/workspaces/${workspaceId}/tasks?projectId=${projectId}&archived=${archived}`);return result.data.map(mapTask)},
   async myTasks(workspaceId:string){const result=await request<{data:RawTask[]}>(`/workspaces/${workspaceId}/tasks?mine=true&pageSize=100`);return result.data.map(mapTask)},
   notifications(workspaceId:string){return request<{items:Notification[];unread:number}>(`/notifications?workspaceId=${encodeURIComponent(workspaceId)}`)},
@@ -67,6 +68,8 @@ export const api={
   auditLogs(workspaceId:string){return request<AuditLog[]>(`/workspaces/${workspaceId}/audit-logs`)},
   createTask(workspaceId:string,task:Task){return request(`/workspaces/${workspaceId}/tasks`,{method:'POST',body:JSON.stringify({projectId:task.projectId,columnId:task.column,title:task.title,description:task.description,kind:task.kind,typeFields:task.typeFields,priority:{高:'HIGH',中:'MEDIUM',低:'LOW'}[task.priority],assigneeIds:task.assigneeId?[task.assigneeId]:[],dueDate:task.due||null,labels:task.tags})})},
   updateTask(workspaceId:string,task:Task){return request<{id:string;version:number}>(`/workspaces/${workspaceId}/tasks/${task.id}`,{method:'PATCH',body:JSON.stringify({title:task.title,description:task.description,kind:task.kind,typeFields:task.typeFields,columnId:task.column,priority:{高:'HIGH',中:'MEDIUM',低:'LOW'}[task.priority],assigneeIds:task.assigneeId?[task.assigneeId]:[],dueDate:task.due||null,labels:task.tags,version:task.version})})},
+  transitionTask(workspaceId:string,taskId:string,toColumnId:string,version:number,comment=''){return request<{id:string;version:number;columnId:string;actionName:string}>(`/workspaces/${workspaceId}/tasks/${taskId}/transitions`,{method:'POST',body:JSON.stringify({toColumnId,version,comment})})},
+  taskTransitions(workspaceId:string,taskId:string){return request<TaskTransitionEvent[]>(`/workspaces/${workspaceId}/tasks/${taskId}/transitions`)},
   bulkUpdateTasks(workspaceId:string,taskIds:string[],action:TaskBulkAction){return request<{updated:number}>(`/workspaces/${workspaceId}/tasks/bulk`,{method:'PATCH',body:JSON.stringify({taskIds,action})})},
   deleteTask(workspaceId:string,taskId:string){return request<{ok:true}>(`/workspaces/${workspaceId}/tasks/${taskId}`,{method:'DELETE'})},
   taskWatch(workspaceId:string,taskId:string){return request<{watching:boolean}>(`/workspaces/${workspaceId}/tasks/${taskId}/watch`)},
