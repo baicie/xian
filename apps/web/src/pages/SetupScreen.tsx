@@ -1,57 +1,41 @@
-import { FormEvent, useEffect, useState } from "react";
-import { ArrowRight } from "lucide-react";
-import { api } from "@/api";
-import { Button } from "@/components/ui/button";
-import {
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { FormEvent, useEffect, useState } from 'react'
+import { ArrowRight } from 'lucide-react'
+import { api } from '@/api'
+import { Button } from '@/components/ui/button'
+import { Field, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
 
-export default function SetupScreen({
-  token,
-  onReady,
-}: {
-  token: string;
-  onReady: () => void;
-}) {
+export default function SetupScreen({ token, onReady }: { token: string; onReady: () => void }) {
   const [preview, setPreview] = useState<{
-    email: string;
-    name: string;
-    expired: boolean;
-    used: boolean;
-    usable: boolean;
-  } | null>(null);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+    email: string
+    name: string
+    expired: boolean
+    used: boolean
+    usable: boolean
+  } | null>(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
   useEffect(() => {
     void api
       .previewSetup(token)
       .then(setPreview)
-      .catch((reason) =>
-        setError(reason instanceof Error ? reason.message : "链接无效"),
-      );
-  }, [token]);
+      .catch((reason) => setError(reason instanceof Error ? reason.message : '链接无效'))
+  }, [token])
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBusy(true);
-    setError("");
-    const password = String(
-      new FormData(event.currentTarget).get("password"),
-    );
+    event.preventDefault()
+    setBusy(true)
+    setError('')
+    const password = String(new FormData(event.currentTarget).get('password'))
     try {
-      await api.completeSetup(token, password);
-      onReady();
+      await api.completeSetup(token, password)
+      onReady()
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "设置失败");
+      setError(reason instanceof Error ? reason.message : '设置失败')
     } finally {
-      setBusy(false);
+      setBusy(false)
     }
   }
-  if (!preview && !error)
-    return <main className="boot">正在加载设置链接…</main>;
+  if (!preview && !error) return <main className="boot">正在加载设置链接…</main>
   if (error && !preview)
     return (
       <main className="auth-page">
@@ -60,14 +44,9 @@ export default function SetupScreen({
           <p className="auth-closed-note">{error}</p>
         </form>
       </main>
-    );
+    )
   const unusable =
-    preview &&
-    (!preview.usable
-      ? preview.used
-        ? "该设置链接已被使用"
-        : "该设置链接已过期"
-      : "");
+    preview && (!preview.usable ? (preview.used ? '该设置链接已被使用' : '该设置链接已过期') : '')
   return (
     <main className="auth-page">
       <section className="auth-note">
@@ -107,12 +86,12 @@ export default function SetupScreen({
               </Field>
             </FieldGroup>
             <Button type="submit" size="lg" disabled={busy}>
-              {busy ? "请稍候…" : "设置密码并登录"}
+              {busy ? '请稍候…' : '设置密码并登录'}
               <ArrowRight data-icon="inline-end" />
             </Button>
           </>
         )}
       </form>
     </main>
-  );
+  )
 }

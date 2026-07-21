@@ -1,11 +1,18 @@
 {
   "name": "xian",
   "private": true,
-  "workspaces": ["apps/*"],
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
     "dev": "pnpm --parallel --filter @xian/api --filter @xian/web run dev",
     "build": "pnpm --filter @xian/web build && pnpm --filter @xian/api build",
     "test": "pnpm --filter @xian/web test && pnpm --filter @xian/api test",
+    "lint": "eslint . --max-warnings=0",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
+    "check": "pnpm format:check && pnpm lint && pnpm test && pnpm build",
     "db:migrate": "pnpm --filter @xian/api db:migrate",
     "start": "pnpm --filter @xian/api start"
   },
@@ -14,5 +21,16 @@
       "@types/node": "26.1.1",
       "shell-quote": "^1.9.0"
     }
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.7.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "globals": "^17.7.0",
+    "prettier": "^3.9.6",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.65.0"
   }
 }

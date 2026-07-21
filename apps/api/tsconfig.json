@@ -1,9 +1,17 @@
 {
   "compilerOptions": {
-    "target": "ES2022", "module": "NodeNext", "moduleResolution": "NodeNext",
-    "outDir": "dist", "rootDir": "src", "strict": true, "skipLibCheck": true,
-    "experimentalDecorators": true, "emitDecoratorMetadata": true, "esModuleInterop": true,
-    "noUncheckedIndexedAccess": true, "noImplicitOverride": true
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "dist",
+    "rootDir": "src",
+    "strict": true,
+    "skipLibCheck": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "esModuleInterop": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true
   },
   "include": ["src"],
   "exclude": ["src/**/*.test.ts"]

@@ -10,7 +10,7 @@ jobs:
       postgres:
         image: postgres:17-alpine
         env: { POSTGRES_DB: xian, POSTGRES_USER: xian, POSTGRES_PASSWORD: xian }
-        ports: ["5432:5432"]
+        ports: ['5432:5432']
         options: >-
           --health-cmd "pg_isready -U xian" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
@@ -23,6 +23,8 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
       - run: pnpm test
       - run: pnpm db:migrate
       - run: pnpm --filter @xian/api test:integration

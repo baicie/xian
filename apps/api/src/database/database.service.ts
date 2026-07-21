@@ -14,5 +14,7 @@ export class DatabaseService implements OnModuleDestroy {
     this.db = drizzle(this.client)
   }
 
-  async onModuleDestroy() { await this.client.end() }
+  async onModuleDestroy() {
+    await this.client.end()
+  }
 }

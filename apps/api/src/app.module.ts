@@ -17,9 +17,40 @@ import { InvitationController, InvitationService } from './modules/invitations.j
 import { AssetController, AssetService } from './modules/assets.js'
 
 @Module({
-  controllers: [AuthController, WorkspaceController, ProjectController, TaskController, AssetController, DocumentController, PlanController, McpTokenController, TransferController, GitHubController, McpController, SystemController, InvitationController],
-  providers: [DatabaseService, AuthService, WorkspaceService, ProjectService, TaskService, AssetService, DocumentService, PlanService, McpTokenService, McpService, TransferService, GitHubService, InvitationService, { provide: APP_GUARD, useClass: SessionGuard }],
+  controllers: [
+    AuthController,
+    WorkspaceController,
+    ProjectController,
+    TaskController,
+    AssetController,
+    DocumentController,
+    PlanController,
+    McpTokenController,
+    TransferController,
+    GitHubController,
+    McpController,
+    SystemController,
+    InvitationController,
+  ],
+  providers: [
+    DatabaseService,
+    AuthService,
+    WorkspaceService,
+    ProjectService,
+    TaskService,
+    AssetService,
+    DocumentService,
+    PlanService,
+    McpTokenService,
+    McpService,
+    TransferService,
+    GitHubService,
+    InvitationService,
+    { provide: APP_GUARD, useClass: SessionGuard },
+  ],
 })
 export class AppModule implements NestModule {
-  configure(consumer: MiddlewareConsumer) { consumer.apply(requestContext, requestLogger, cookieParser()).forRoutes('{*path}') }
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(requestContext, requestLogger, cookieParser()).forRoutes('{*path}')
+  }
 }

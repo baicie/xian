@@ -1,44 +1,427 @@
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useState } from 'react'
 import { CheckCircle2, ListChecks, Plus, Rocket, Save, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { api, PlanItem, PlanSummary, ProjectPlan } from '@/api'
 import ChoiceSelect from '@/components/ChoiceSelect'
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 
-type Project={id:string;name:string}
-const priorityName={HIGH:'高',MEDIUM:'中',LOW:'低'} as const
+type Project = { id: string; name: string }
+const priorityName = { HIGH: '高', MEDIUM: '中', LOW: '低' } as const
 
-export default function PlansPage({workspaceId,projects,en,onApplied}:{workspaceId:string;projects:Project[];en:boolean;onApplied:()=>Promise<void>}) {
-  const [items,setItems]=useState<PlanSummary[]>([]),[plan,setPlan]=useState<ProjectPlan|null>(null),[draft,setDraft]=useState<ProjectPlan|null>(null),[creating,setCreating]=useState(false),[confirming,setConfirming]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('')
-  const open=async(id:string)=>{const next=await api.plan(workspaceId,id);setPlan(next);setDraft(next)}
-  const load=async(selectFirst=false)=>{const next=await api.plans(workspaceId);setItems(next);if(selectFirst&&next[0])await open(next[0].id)}
-  useEffect(()=>{setPlan(null);setDraft(null);void load(true).catch(reason=>setError(reason.message))},[workspaceId])
-  const save=async()=>{if(!plan||!draft)return;setBusy(true);try{const next=await api.updatePlan(workspaceId,plan.id,{title:draft.title,goal:draft.goal,version:plan.version,items:draft.items.map(({title,description,kind,priority})=>({title,description,kind,priority}))});setPlan(next);setDraft(next);await load();toast.success(en?'Plan saved':'计划草稿已保存')}catch(reason){setError(reason instanceof Error?reason.message:'保存失败')}finally{setBusy(false)}}
-  const apply=async()=>{if(!plan)return;setBusy(true);try{const result=await api.applyPlan(workspaceId,plan.id);await open(plan.id);await load();await onApplied();setConfirming(false);toast.success(result.alreadyApplied?(en?'Plan was already applied':'计划此前已应用'):(en?`${result.taskIds.length} tasks created`:`已创建 ${result.taskIds.length} 个任务`))}catch(reason){setError(reason instanceof Error?reason.message:'应用失败')}finally{setBusy(false)}}
-  const changeItem=(index:number,patch:Partial<PlanItem>)=>setDraft(current=>current?{...current,items:current.items.map((item,itemIndex)=>itemIndex===index?{...item,...patch}:item)}:current)
-  return <section className="plans-page">
-    <header><div><h1>{en?'Planning drafts':'任务规划'}</h1><p>{en?'Review every draft before it creates project tasks.':'先审核计划草稿，再一次性生成项目任务。'}</p></div><Button onClick={()=>setCreating(true)} disabled={!projects.length}><Plus data-icon="inline-start" />{en?'New plan':'新建计划'}</Button></header>
-    {error?<p className="page-error" role="alert">{error}</p>:null}
-    <div className="plans-layout"><aside className="plan-list">{items.map(item=><Button variant="ghost" className={item.id===plan?.id?'active':''} key={item.id} onClick={()=>void open(item.id)}><span><strong>{item.title}</strong><small>{item.projectName} · {item.itemCount} {en?'items':'项'}</small></span><Badge variant={item.status==='APPLIED'?'default':'secondary'}>{item.status==='APPLIED'?(en?'Applied':'已应用'):(en?'Draft':'草稿')}</Badge></Button>)}{!items.length?<Empty><EmptyHeader><EmptyMedia variant="icon"><Sparkles/></EmptyMedia><EmptyTitle>{en?'No plans yet':'还没有计划草稿'}</EmptyTitle><EmptyDescription>{en?'Create one here or ask an MCP client to draft it.':'可在此创建，或让 MCP 客户端生成草稿。'}</EmptyDescription></EmptyHeader></Empty>:null}</aside>
-      {draft?<main className="plan-workspace"><div className="plan-meta"><div><Badge variant={draft.status==='APPLIED'?'default':'secondary'}>{draft.status==='APPLIED'?(en?'Applied':'已应用'):(en?'Awaiting review':'待审核')}</Badge><small>{items.find(item=>item.id===draft.id)?.projectName}</small></div>{draft.status==='DRAFT'?<span><Button variant="outline" disabled={busy} onClick={()=>void save()}><Save data-icon="inline-start" />{en?'Save draft':'保存草稿'}</Button><Button disabled={busy} onClick={()=>setConfirming(true)}><Rocket data-icon="inline-start" />{en?'Apply plan':'应用计划'}</Button></span>:<Badge variant="outline"><CheckCircle2 data-icon="inline-start" />{en?'Tasks created':'任务已创建'}</Badge>}</div>
-        <div className="plan-fields"><Field><FieldLabel htmlFor="plan-title">{en?'Plan title':'计划标题'}</FieldLabel><Input id="plan-title" value={draft.title} disabled={draft.status==='APPLIED'} onChange={event=>setDraft({...draft,title:event.target.value})}/></Field><Field><FieldLabel htmlFor="plan-goal">{en?'Goal and acceptance intent':'目标与验收意图'}</FieldLabel><Textarea id="plan-goal" rows={3} value={draft.goal} disabled={draft.status==='APPLIED'} onChange={event=>setDraft({...draft,goal:event.target.value})}/></Field><div className="plan-items-head"><span><ListChecks/>{draft.items.length} {en?'planned tasks':'个计划任务'}</span></div><div className="plan-items">{draft.items.map((item,index)=><Card key={item.id}><CardContent><b>{index+1}</b><Input aria-label={`${en?'Task':'任务'} ${index+1}`} value={item.title} disabled={draft.status==='APPLIED'} onChange={event=>changeItem(index,{title:event.target.value})}/><ChoiceSelect label={en?'Type':'类型'} value={item.kind} options={[{value:'TASK',label:en?'Task':'任务'},{value:'STORY',label:en?'Story':'需求'},{value:'BUG',label:'Bug'}]} disabled={draft.status==='APPLIED'} onChange={kind=>changeItem(index,{kind})}/><ChoiceSelect label={en?'Priority':'优先级'} value={item.priority} options={(Object.keys(priorityName) as PlanItem['priority'][]).map(value=>({value,label:en?value:priorityName[value]}))} disabled={draft.status==='APPLIED'} onChange={priority=>changeItem(index,{priority})}/></CardContent></Card>)}</div></div>
-      </main>:<div className="plan-placeholder"><Sparkles/><span>{en?'Choose or create a plan':'选择或新建一份计划'}</span></div>}</div>
-    <CreatePlanDialog open={creating} onOpenChange={setCreating} workspaceId={workspaceId} projects={projects} en={en} onCreated={async id=>{await load();await open(id)}}/>
-    <AlertDialog open={confirming} onOpenChange={setConfirming}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{en?'Apply this plan?':'确认应用这份计划？'}</AlertDialogTitle><AlertDialogDescription>{en?'The reviewed items will become project tasks. Applying twice will not create duplicates.':`将把审核后的 ${draft?.items.length??0} 项内容创建为项目任务；重复应用不会重复创建。`}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{en?'Cancel':'取消'}</AlertDialogCancel><AlertDialogAction disabled={busy} onClick={()=>void apply()}>{en?'Apply and create tasks':'应用并创建任务'}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
-  </section>
+export default function PlansPage({
+  workspaceId,
+  projects,
+  en,
+  onApplied,
+}: {
+  workspaceId: string
+  projects: Project[]
+  en: boolean
+  onApplied: () => Promise<void>
+}) {
+  const [items, setItems] = useState<PlanSummary[]>([]),
+    [plan, setPlan] = useState<ProjectPlan | null>(null),
+    [draft, setDraft] = useState<ProjectPlan | null>(null),
+    [creating, setCreating] = useState(false),
+    [confirming, setConfirming] = useState(false),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState('')
+  const open = useCallback(
+    async (id: string) => {
+      const next = await api.plan(workspaceId, id)
+      setPlan(next)
+      setDraft(next)
+    },
+    [workspaceId],
+  )
+  const load = useCallback(
+    async (selectFirst = false) => {
+      const next = await api.plans(workspaceId)
+      setItems(next)
+      if (selectFirst && next[0]) await open(next[0].id)
+    },
+    [workspaceId, open],
+  )
+  useEffect(() => {
+    setPlan(null)
+    setDraft(null)
+    void load(true).catch((reason) => setError(reason.message))
+  }, [load])
+  const save = async () => {
+    if (!plan || !draft) return
+    setBusy(true)
+    try {
+      const next = await api.updatePlan(workspaceId, plan.id, {
+        title: draft.title,
+        goal: draft.goal,
+        version: plan.version,
+        items: draft.items.map(({ title, description, kind, priority }) => ({
+          title,
+          description,
+          kind,
+          priority,
+        })),
+      })
+      setPlan(next)
+      setDraft(next)
+      await load()
+      toast.success(en ? 'Plan saved' : '计划草稿已保存')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '保存失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+  const apply = async () => {
+    if (!plan) return
+    setBusy(true)
+    try {
+      const result = await api.applyPlan(workspaceId, plan.id)
+      await open(plan.id)
+      await load()
+      await onApplied()
+      setConfirming(false)
+      toast.success(
+        result.alreadyApplied
+          ? en
+            ? 'Plan was already applied'
+            : '计划此前已应用'
+          : en
+            ? `${result.taskIds.length} tasks created`
+            : `已创建 ${result.taskIds.length} 个任务`,
+      )
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '应用失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+  const changeItem = (index: number, patch: Partial<PlanItem>) =>
+    setDraft((current) =>
+      current
+        ? {
+            ...current,
+            items: current.items.map((item, itemIndex) =>
+              itemIndex === index ? { ...item, ...patch } : item,
+            ),
+          }
+        : current,
+    )
+  return (
+    <section className="plans-page">
+      <header>
+        <div>
+          <h1>{en ? 'Planning drafts' : '任务规划'}</h1>
+          <p>
+            {en
+              ? 'Review every draft before it creates project tasks.'
+              : '先审核计划草稿，再一次性生成项目任务。'}
+          </p>
+        </div>
+        <Button onClick={() => setCreating(true)} disabled={!projects.length}>
+          <Plus data-icon="inline-start" />
+          {en ? 'New plan' : '新建计划'}
+        </Button>
+      </header>
+      {error ? (
+        <p className="page-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <div className="plans-layout">
+        <aside className="plan-list">
+          {items.map((item) => (
+            <Button
+              variant="ghost"
+              className={item.id === plan?.id ? 'active' : ''}
+              key={item.id}
+              onClick={() => void open(item.id)}
+            >
+              <span>
+                <strong>{item.title}</strong>
+                <small>
+                  {item.projectName} · {item.itemCount} {en ? 'items' : '项'}
+                </small>
+              </span>
+              <Badge variant={item.status === 'APPLIED' ? 'default' : 'secondary'}>
+                {item.status === 'APPLIED' ? (en ? 'Applied' : '已应用') : en ? 'Draft' : '草稿'}
+              </Badge>
+            </Button>
+          ))}
+          {!items.length ? (
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Sparkles />
+                </EmptyMedia>
+                <EmptyTitle>{en ? 'No plans yet' : '还没有计划草稿'}</EmptyTitle>
+                <EmptyDescription>
+                  {en
+                    ? 'Create one here or ask an MCP client to draft it.'
+                    : '可在此创建，或让 MCP 客户端生成草稿。'}
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : null}
+        </aside>
+        {draft ? (
+          <main className="plan-workspace">
+            <div className="plan-meta">
+              <div>
+                <Badge variant={draft.status === 'APPLIED' ? 'default' : 'secondary'}>
+                  {draft.status === 'APPLIED'
+                    ? en
+                      ? 'Applied'
+                      : '已应用'
+                    : en
+                      ? 'Awaiting review'
+                      : '待审核'}
+                </Badge>
+                <small>{items.find((item) => item.id === draft.id)?.projectName}</small>
+              </div>
+              {draft.status === 'DRAFT' ? (
+                <span>
+                  <Button variant="outline" disabled={busy} onClick={() => void save()}>
+                    <Save data-icon="inline-start" />
+                    {en ? 'Save draft' : '保存草稿'}
+                  </Button>
+                  <Button disabled={busy} onClick={() => setConfirming(true)}>
+                    <Rocket data-icon="inline-start" />
+                    {en ? 'Apply plan' : '应用计划'}
+                  </Button>
+                </span>
+              ) : (
+                <Badge variant="outline">
+                  <CheckCircle2 data-icon="inline-start" />
+                  {en ? 'Tasks created' : '任务已创建'}
+                </Badge>
+              )}
+            </div>
+            <div className="plan-fields">
+              <Field>
+                <FieldLabel htmlFor="plan-title">{en ? 'Plan title' : '计划标题'}</FieldLabel>
+                <Input
+                  id="plan-title"
+                  value={draft.title}
+                  disabled={draft.status === 'APPLIED'}
+                  onChange={(event) => setDraft({ ...draft, title: event.target.value })}
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="plan-goal">
+                  {en ? 'Goal and acceptance intent' : '目标与验收意图'}
+                </FieldLabel>
+                <Textarea
+                  id="plan-goal"
+                  rows={3}
+                  value={draft.goal}
+                  disabled={draft.status === 'APPLIED'}
+                  onChange={(event) => setDraft({ ...draft, goal: event.target.value })}
+                />
+              </Field>
+              <div className="plan-items-head">
+                <span>
+                  <ListChecks />
+                  {draft.items.length} {en ? 'planned tasks' : '个计划任务'}
+                </span>
+              </div>
+              <div className="plan-items">
+                {draft.items.map((item, index) => (
+                  <Card key={item.id}>
+                    <CardContent>
+                      <b>{index + 1}</b>
+                      <Input
+                        aria-label={`${en ? 'Task' : '任务'} ${index + 1}`}
+                        value={item.title}
+                        disabled={draft.status === 'APPLIED'}
+                        onChange={(event) => changeItem(index, { title: event.target.value })}
+                      />
+                      <ChoiceSelect
+                        label={en ? 'Type' : '类型'}
+                        value={item.kind}
+                        options={[
+                          { value: 'TASK', label: en ? 'Task' : '任务' },
+                          { value: 'STORY', label: en ? 'Story' : '需求' },
+                          { value: 'BUG', label: 'Bug' },
+                        ]}
+                        disabled={draft.status === 'APPLIED'}
+                        onChange={(kind) => changeItem(index, { kind })}
+                      />
+                      <ChoiceSelect
+                        label={en ? 'Priority' : '优先级'}
+                        value={item.priority}
+                        options={(Object.keys(priorityName) as PlanItem['priority'][]).map(
+                          (value) => ({
+                            value,
+                            label: en ? value : priorityName[value],
+                          }),
+                        )}
+                        disabled={draft.status === 'APPLIED'}
+                        onChange={(priority) => changeItem(index, { priority })}
+                      />
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          </main>
+        ) : (
+          <div className="plan-placeholder">
+            <Sparkles />
+            <span>{en ? 'Choose or create a plan' : '选择或新建一份计划'}</span>
+          </div>
+        )}
+      </div>
+      <CreatePlanDialog
+        open={creating}
+        onOpenChange={setCreating}
+        workspaceId={workspaceId}
+        projects={projects}
+        en={en}
+        onCreated={async (id) => {
+          await load()
+          await open(id)
+        }}
+      />
+      <AlertDialog open={confirming} onOpenChange={setConfirming}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{en ? 'Apply this plan?' : '确认应用这份计划？'}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {en
+                ? 'The reviewed items will become project tasks. Applying twice will not create duplicates.'
+                : `将把审核后的 ${draft?.items.length ?? 0} 项内容创建为项目任务；重复应用不会重复创建。`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{en ? 'Cancel' : '取消'}</AlertDialogCancel>
+            <AlertDialogAction disabled={busy} onClick={() => void apply()}>
+              {en ? 'Apply and create tasks' : '应用并创建任务'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </section>
+  )
 }
 
-function CreatePlanDialog({open,onOpenChange,workspaceId,projects,en,onCreated}:{open:boolean;onOpenChange:(open:boolean)=>void;workspaceId:string;projects:Project[];en:boolean;onCreated:(id:string)=>Promise<void>}) {
-  const [projectId,setProjectId]=useState(projects[0]?.id||''),[busy,setBusy]=useState(false)
-  useEffect(()=>{if(!projectId&&projects[0])setProjectId(projects[0].id)},[projects,projectId])
-  const submit=async(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();const data=new FormData(event.currentTarget),lines=String(data.get('items')).split('\n').map(value=>value.trim()).filter(Boolean);if(!lines.length)return;setBusy(true);try{const plan=await api.createPlan(workspaceId,{projectId,title:String(data.get('title')),goal:String(data.get('goal')),items:lines.map(title=>({title}))});await onCreated(plan.id);onOpenChange(false);toast.success(en?'Plan draft created':'计划草稿已创建')}finally{setBusy(false)}}
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent><form onSubmit={submit}><DialogHeader><DialogTitle>{en?'New planning draft':'新建计划草稿'}</DialogTitle><DialogDescription>{en?'One line becomes one task. You can refine type and priority before applying.':'每行会成为一个任务，应用前还可调整类型和优先级。'}</DialogDescription></DialogHeader><FieldGroup className="create-form"><Field><FieldLabel>{en?'Project':'项目'}</FieldLabel><ChoiceSelect label={en?'Project':'项目'} value={projectId} options={projects.map(project=>({value:project.id,label:project.name}))} onChange={setProjectId}/></Field><Field><FieldLabel htmlFor="new-plan-title">{en?'Title':'标题'}</FieldLabel><Input id="new-plan-title" name="title" required /></Field><Field><FieldLabel htmlFor="new-plan-goal">{en?'Goal':'目标'}</FieldLabel><Textarea id="new-plan-goal" name="goal" required rows={3}/></Field><Field><FieldLabel htmlFor="new-plan-items">{en?'Planned tasks, one per line':'计划任务（每行一项）'}</FieldLabel><Textarea id="new-plan-items" name="items" required rows={7}/></Field></FieldGroup><DialogFooter><Button type="button" variant="outline" onClick={()=>onOpenChange(false)}>{en?'Cancel':'取消'}</Button><Button type="submit" disabled={busy}>{busy?(en?'Creating…':'创建中…'):(en?'Create draft':'创建草稿')}</Button></DialogFooter></form></DialogContent></Dialog>
+function CreatePlanDialog({
+  open,
+  onOpenChange,
+  workspaceId,
+  projects,
+  en,
+  onCreated,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  workspaceId: string
+  projects: Project[]
+  en: boolean
+  onCreated: (id: string) => Promise<void>
+}) {
+  const [projectId, setProjectId] = useState(projects[0]?.id || ''),
+    [busy, setBusy] = useState(false)
+  useEffect(() => {
+    if (!projectId && projects[0]) setProjectId(projects[0].id)
+  }, [projects, projectId])
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const data = new FormData(event.currentTarget),
+      lines = String(data.get('items'))
+        .split('\n')
+        .map((value) => value.trim())
+        .filter(Boolean)
+    if (!lines.length) return
+    setBusy(true)
+    try {
+      const plan = await api.createPlan(workspaceId, {
+        projectId,
+        title: String(data.get('title')),
+        goal: String(data.get('goal')),
+        items: lines.map((title) => ({ title })),
+      })
+      await onCreated(plan.id)
+      onOpenChange(false)
+      toast.success(en ? 'Plan draft created' : '计划草稿已创建')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <form onSubmit={submit}>
+          <DialogHeader>
+            <DialogTitle>{en ? 'New planning draft' : '新建计划草稿'}</DialogTitle>
+            <DialogDescription>
+              {en
+                ? 'One line becomes one task. You can refine type and priority before applying.'
+                : '每行会成为一个任务，应用前还可调整类型和优先级。'}
+            </DialogDescription>
+          </DialogHeader>
+          <FieldGroup className="create-form">
+            <Field>
+              <FieldLabel>{en ? 'Project' : '项目'}</FieldLabel>
+              <ChoiceSelect
+                label={en ? 'Project' : '项目'}
+                value={projectId}
+                options={projects.map((project) => ({
+                  value: project.id,
+                  label: project.name,
+                }))}
+                onChange={setProjectId}
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="new-plan-title">{en ? 'Title' : '标题'}</FieldLabel>
+              <Input id="new-plan-title" name="title" required />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="new-plan-goal">{en ? 'Goal' : '目标'}</FieldLabel>
+              <Textarea id="new-plan-goal" name="goal" required rows={3} />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="new-plan-items">
+                {en ? 'Planned tasks, one per line' : '计划任务（每行一项）'}
+              </FieldLabel>
+              <Textarea id="new-plan-items" name="items" required rows={7} />
+            </Field>
+          </FieldGroup>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              {en ? 'Cancel' : '取消'}
+            </Button>
+            <Button type="submit" disabled={busy}>
+              {busy ? (en ? 'Creating…' : '创建中…') : en ? 'Create draft' : '创建草稿'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
 }

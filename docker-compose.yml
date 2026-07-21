@@ -10,8 +10,8 @@ services:
       ASSET_STORAGE_ROOT: /app/data/assets
       ASSET_MAX_FILE_BYTES: ${ASSET_MAX_FILE_BYTES:-10485760}
       ASSET_WORKSPACE_QUOTA_BYTES: ${ASSET_WORKSPACE_QUOTA_BYTES:-268435456}
-    ports: ["8080:8080"]
-    volumes: ["xian-assets:/app/data/assets"]
+    ports: ['8080:8080']
+    volumes: ['xian-assets:/app/data/assets']
     depends_on:
       postgres:
         condition: service_healthy
@@ -21,10 +21,10 @@ services:
       POSTGRES_DB: xian
       POSTGRES_USER: xian
       POSTGRES_PASSWORD: xian
-    ports: ["${POSTGRES_PORT:-5432}:5432"]
-    volumes: ["xian-data:/var/lib/postgresql/data"]
+    ports: ['${POSTGRES_PORT:-5432}:5432']
+    volumes: ['xian-data:/var/lib/postgresql/data']
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U xian"]
+      test: ['CMD-SHELL', 'pg_isready -U xian']
       interval: 3s
       timeout: 3s
       retries: 10

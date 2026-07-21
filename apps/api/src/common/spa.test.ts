@@ -36,13 +36,10 @@ describe('SPA history fallback', () => {
 
   it.each(['/api/v1/missing', '/mcp', '/assets/missing.js'])(
     'preserves backend and asset 404 responses for %s',
-    async path => {
+    async (path) => {
       const app = await createApp()
 
-      await request(app)
-        .get(path)
-        .set('Accept', 'text/html')
-        .expect(404, { code: 'HTTP_404' })
+      await request(app).get(path).set('Accept', 'text/html').expect(404, { code: 'HTTP_404' })
     },
   )
 })
