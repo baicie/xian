@@ -582,99 +582,142 @@ function TaskCard({
   const [dragging, setDragging] = useState(false)
   const availableTransitions = transitionsForTask(transitions, task)
   return (
-    <ContextMenu>
-      <ContextMenuTrigger
-        render={
-          <Button
-            type="button"
-            className={`task-card ${dragging ? 'dragging' : ''}`}
-            variant="ghost"
-          />
-        }
-        draggable
-        onDragStart={(event) => {
-          setDragging(true)
-          event.dataTransfer.setData('text/plain', String(task.id))
-        }}
-        onDragEnd={() => setDragging(false)}
-        onClick={() => onEdit(task)}
-      >
-        <span className="task-top">
-          <span className="task-key">
-            {code}-{task.number}
-          </span>
-          <Badge variant={task.kind === 'BUG' ? 'destructive' : 'secondary'}>
-            {task.kind === 'BUG' ? t.bug : task.kind === 'STORY' ? t.story : t.task}
-          </Badge>
-        </span>
-        <span className="task-title">{task.title}</span>
-        {task.subtaskTotal ? (
-          <span className="task-progress">
-            <span>
-              <List />
-              {task.subtaskDone}/{task.subtaskTotal}
+    <div className="task-card-shell">
+      <ContextMenu>
+        <ContextMenuTrigger
+          render={
+            <Button
+              type="button"
+              className={`task-card ${dragging ? 'dragging' : ''}`}
+              variant="ghost"
+            />
+          }
+          draggable
+          onDragStart={(event) => {
+            setDragging(true)
+            event.dataTransfer.setData('text/plain', String(task.id))
+          }}
+          onDragEnd={() => setDragging(false)}
+          onClick={() => onEdit(task)}
+        >
+          <span className="task-top">
+            <span className="task-key">
+              {code}-{task.number}
             </span>
-            <i>
-              <b style={{ width: `${((task.subtaskDone ?? 0) / task.subtaskTotal) * 100}%` }} />
-            </i>
-          </span>
-        ) : null}
-        <span className="task-details-row">
-          <Badge variant="ghost" className={`priority priority--${task.priority}`}>
-            {({ 高: t.high, 中: t.medium, 低: t.low } as Record<Priority, string>)[task.priority]}{' '}
-            {t.priority}
-          </Badge>
-        </span>
-        <span className="tags">
-          {task.tags.map((tag) => (
-            <Badge variant="outline" key={tag}>
-              {tag}
+            <Badge variant={task.kind === 'BUG' ? 'destructive' : 'secondary'}>
+              {task.kind === 'BUG' ? t.bug : task.kind === 'STORY' ? t.story : t.task}
             </Badge>
-          ))}
-        </span>
-        <span className="task-meta">
-          <span className={task.due === '今天' ? 'due-today' : ''}>
-            <Clock3 />
-            {task.due || (t.due === '截止时间' ? '未设置' : 'Not set')}
           </span>
-          <span className="task-assignee">
-            <UserAvatar name={task.assignee} small />
-            {task.assignee}
+          <span className="task-title">{task.title}</span>
+          {task.subtaskTotal ? (
+            <span className="task-progress">
+              <span>
+                <List />
+                {task.subtaskDone}/{task.subtaskTotal}
+              </span>
+              <i>
+                <b style={{ width: `${((task.subtaskDone ?? 0) / task.subtaskTotal) * 100}%` }} />
+              </i>
+            </span>
+          ) : null}
+          <span className="task-details-row">
+            <Badge variant="ghost" className={`priority priority--${task.priority}`}>
+              {({ 高: t.high, 中: t.medium, 低: t.low } as Record<Priority, string>)[task.priority]}{' '}
+              {t.priority}
+            </Badge>
           </span>
-        </span>
-      </ContextMenuTrigger>
-      <ContextMenuContent>
-        <ContextMenuItem onClick={() => onEdit(task)}>
-          <PencilLine />
-          {t.openTask}
-        </ContextMenuItem>
-        {availableTransitions.length ? (
-          <ContextMenuSub>
-            <ContextMenuSubTrigger>
-              <ArrowRight />
-              {t.moveTo}
-            </ContextMenuSubTrigger>
-            <ContextMenuSubContent>
-              {availableTransitions.map((transition) => (
-                <ContextMenuItem
-                  key={transition.id}
-                  onClick={() => onMove(task, transition.toColumnId)}
-                >
-                  <CircleDot />
-                  {columns.find((column) => column.id === transition.toColumnId)?.label ??
-                    transition.name}
-                </ContextMenuItem>
-              ))}
-            </ContextMenuSubContent>
-          </ContextMenuSub>
-        ) : null}
-        <ContextMenuSeparator />
-        <ContextMenuItem variant="destructive" onClick={() => onDelete(task)}>
-          <Trash2 />
-          {t.deleteTask}
-        </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
+          <span className="tags">
+            {task.tags.map((tag) => (
+              <Badge variant="outline" key={tag}>
+                {tag}
+              </Badge>
+            ))}
+          </span>
+          <span className="task-meta">
+            <span className={task.due === '今天' ? 'due-today' : ''}>
+              <Clock3 />
+              {task.due || (t.due === '截止时间' ? '未设置' : 'Not set')}
+            </span>
+            <span className="task-assignee">
+              <UserAvatar name={task.assignee} small />
+              {task.assignee}
+            </span>
+          </span>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem onClick={() => onEdit(task)}>
+            <PencilLine />
+            {t.openTask}
+          </ContextMenuItem>
+          {availableTransitions.length ? (
+            <ContextMenuSub>
+              <ContextMenuSubTrigger>
+                <ArrowRight />
+                {t.moveTo}
+              </ContextMenuSubTrigger>
+              <ContextMenuSubContent>
+                {availableTransitions.map((transition) => (
+                  <ContextMenuItem
+                    key={transition.id}
+                    onClick={() => onMove(task, transition.toColumnId)}
+                  >
+                    <CircleDot />
+                    {columns.find((column) => column.id === transition.toColumnId)?.label ??
+                      transition.name}
+                  </ContextMenuItem>
+                ))}
+              </ContextMenuSubContent>
+            </ContextMenuSub>
+          ) : null}
+          <ContextMenuSeparator />
+          <ContextMenuItem variant="destructive" onClick={() => onDelete(task)}>
+            <Trash2 />
+            {t.deleteTask}
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          className="task-card-actions"
+          render={
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="secondary"
+              aria-label={`${code}-${task.number} ${t.moveTo}`}
+            />
+          }
+        >
+          <MoreHorizontal />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuGroup>
+            <DropdownMenuItem onClick={() => onEdit(task)}>
+              <PencilLine />
+              {t.openTask}
+            </DropdownMenuItem>
+            {availableTransitions.map((transition) => (
+              <DropdownMenuItem
+                key={transition.id}
+                onClick={() => onMove(task, transition.toColumnId)}
+              >
+                <CircleDot />
+                {t.moveTo}{' '}
+                {columns.find((column) => column.id === transition.toColumnId)?.label ??
+                  transition.name}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
+            <DropdownMenuItem variant="destructive" onClick={() => onDelete(task)}>
+              <Trash2 />
+              {t.deleteTask}
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   )
 }
 

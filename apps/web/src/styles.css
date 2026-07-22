@@ -787,6 +787,12 @@ h1 {
   flex-direction: column;
   gap: 8px;
 }
+.task-card-shell {
+  position: relative;
+}
+.task-card-actions {
+  display: none;
+}
 .task-card {
   position: relative;
   width: 100%;
@@ -2990,11 +2996,20 @@ h1 {
   }
   .board {
     padding: 16px 14px 24px;
-    grid-template-columns: repeat(4, 78vw);
-    scroll-snap-type: x mandatory;
+    grid-template-columns: minmax(0, 1fr);
+    overflow: visible;
   }
   .column {
-    scroll-snap-align: start;
+    min-height: 0;
+  }
+  .task-card-actions {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: inline-flex;
+  }
+  .task-card .task-top {
+    padding-right: 38px;
   }
   .bulk-toolbar {
     margin-inline: 14px;
