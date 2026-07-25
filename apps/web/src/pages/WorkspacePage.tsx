@@ -7,6 +7,7 @@ import {
   ChevronRight,
   CheckCircle2,
   CircleAlert,
+  CircleSlash2,
   Database,
   FolderKanban,
   GitCommitHorizontal,
@@ -294,6 +295,11 @@ export default function WorkspacePage({
             icon={<Users />}
             value={projectHealth?.unassignedTasks ?? 0}
             label={en ? 'Unassigned' : '未分配任务'}
+          />
+          <Metric
+            icon={<CircleSlash2 />}
+            value={projectHealth?.blockedTasks ?? 0}
+            label={en ? 'Blocked' : '阻塞任务'}
           />
         </div>
         <TaskRows tasks={tasks.slice(0, 6)} empty={en ? 'No tasks yet' : '还没有任务'} en={en} />
@@ -855,6 +861,12 @@ function TaskRows({ tasks, empty, en }: { tasks: Task[]; empty: string; en: bool
                     : '任务'}
             </Badge>
             <strong>{task.title}</strong>
+            {task.blockerCount ? (
+              <Badge variant="destructive">
+                <CircleSlash2 />
+                {en ? `${task.blockerCount} blocked` : `${task.blockerCount} 项阻塞`}
+              </Badge>
+            ) : null}
             <small>{task.due}</small>
           </CardContent>
         </Card>

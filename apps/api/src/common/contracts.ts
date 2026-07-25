@@ -102,6 +102,7 @@ export const taskTransitionSchema = z
     comment: z.string().max(2000).default(''),
   })
   .strict()
+export const taskDependencyCreateSchema = z.object({ blockerTaskId: z.string().uuid() }).strict()
 const bulkTaskIds = z
   .array(z.string().uuid())
   .min(1)

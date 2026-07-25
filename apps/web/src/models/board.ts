@@ -20,6 +20,7 @@ export type Task = {
   description: string
   typeFields: TaskTypeFields
   version: number
+  blockerCount: number
   subtaskDone?: number
   subtaskTotal?: number
 }
@@ -48,6 +49,7 @@ export const seedTasks: Task[] = [
     description: '',
     typeFields: createTaskTypeFields(),
     version: 1,
+    blockerCount: 0,
   },
   {
     id: '1043',
@@ -65,6 +67,7 @@ export const seedTasks: Task[] = [
     description: '',
     typeFields: createTaskTypeFields(),
     version: 1,
+    blockerCount: 0,
   },
   {
     id: '1044',
@@ -82,6 +85,7 @@ export const seedTasks: Task[] = [
     description: '',
     typeFields: createTaskTypeFields(),
     version: 1,
+    blockerCount: 0,
   },
   {
     id: '1045',
@@ -99,6 +103,7 @@ export const seedTasks: Task[] = [
     description: '',
     typeFields: createTaskTypeFields(),
     version: 1,
+    blockerCount: 0,
   },
   {
     id: '1046',
@@ -116,6 +121,7 @@ export const seedTasks: Task[] = [
     description: '',
     typeFields: createTaskTypeFields(),
     version: 1,
+    blockerCount: 0,
   },
   {
     id: '1047',
@@ -133,6 +139,7 @@ export const seedTasks: Task[] = [
     description: '',
     typeFields: createTaskTypeFields(),
     version: 1,
+    blockerCount: 0,
   },
 ]
 

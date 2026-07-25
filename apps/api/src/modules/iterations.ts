@@ -29,6 +29,7 @@ export type HealthTask = {
   dueDate: string | null
   done: boolean
   assigned: boolean
+  blocked: boolean
   iterationId: string | null
 }
 
@@ -63,11 +64,13 @@ export function calculateProjectHealth(
     overdueTasks: tasks.filter((task) => !task.done && task.dueDate && task.dueDate < today).length,
     openBugs: tasks.filter((task) => task.kind === 'BUG' && !task.done).length,
     unassignedTasks: tasks.filter((task) => !task.done && !task.assigned).length,
+    blockedTasks: tasks.filter((task) => !task.done && task.blocked).length,
     activeIteration: activeIteration
       ? {
           ...activeIteration,
           totalTasks: activeTasks.length,
           completedTasks: activeCompleted,
+          blockedTasks: activeTasks.filter((task) => !task.done && task.blocked).length,
           completionRate: activeTasks.length
             ? Math.round((activeCompleted / activeTasks.length) * 100)
             : 0,
@@ -280,6 +283,7 @@ export class IterationService {
       SELECT t.id,t.number,t.title,t.kind,t.priority,t.due_date AS "dueDate",t.version,
         t.column_id AS "columnId",c.name AS "columnName",c.state_type AS "stateType",
         t.archived_at AS "archivedAt",
+        CASE WHEN c.state_type='DONE' THEN 0 ELSE (SELECT count(*)::int FROM task_dependencies dependency JOIN tasks blocker ON blocker.id=dependency.blocker_task_id JOIN board_columns blocker_column ON blocker_column.id=blocker.column_id WHERE dependency.blocked_task_id=t.id AND blocker.deleted_at IS NULL AND blocker.archived_at IS NULL AND blocker_column.state_type<>'DONE') END AS "blockerCount",
         coalesce(json_agg(json_build_object('id',u.id,'name',u.name)) FILTER(WHERE u.id IS NOT NULL),'[]') AS assignees
       FROM tasks t
       JOIN board_columns c ON c.id=t.column_id
@@ -405,7 +409,7 @@ export class IterationService {
     const [tasks, active] = await Promise.all([
       this.db.client<
         HealthTask[]
-      >`SELECT t.kind,t.due_date::text AS "dueDate",c.state_type='DONE' AS done,EXISTS(SELECT 1 FROM task_assignees ta WHERE ta.task_id=t.id) AS assigned,t.iteration_id AS "iterationId" FROM tasks t JOIN board_columns c ON c.id=t.column_id WHERE t.workspace_id=${workspaceId} AND t.project_id=${projectId} AND t.deleted_at IS NULL AND t.archived_at IS NULL`,
+      >`SELECT t.kind,t.due_date::text AS "dueDate",c.state_type='DONE' AS done,EXISTS(SELECT 1 FROM task_assignees ta WHERE ta.task_id=t.id) AS assigned,EXISTS(SELECT 1 FROM task_dependencies dependency JOIN tasks blocker ON blocker.id=dependency.blocker_task_id JOIN board_columns blocker_column ON blocker_column.id=blocker.column_id WHERE dependency.blocked_task_id=t.id AND blocker.deleted_at IS NULL AND blocker.archived_at IS NULL AND blocker_column.state_type<>'DONE') AS blocked,t.iteration_id AS "iterationId" FROM tasks t JOIN board_columns c ON c.id=t.column_id WHERE t.workspace_id=${workspaceId} AND t.project_id=${projectId} AND t.deleted_at IS NULL AND t.archived_at IS NULL`,
       this.db.client<
         { id: string; title: string }[]
       >`SELECT id,title FROM iterations WHERE workspace_id=${workspaceId} AND project_id=${projectId} AND status='ACTIVE'`,

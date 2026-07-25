@@ -30,6 +30,7 @@ export type IterationTask = {
   columnName: string
   stateType: 'BACKLOG' | 'ACTIVE' | 'REVIEW' | 'DONE'
   archivedAt: string | null
+  blockerCount: number
   assignees: { id: string; name: string }[]
 }
 
@@ -57,11 +58,13 @@ export type ProjectHealth = {
   overdueTasks: number
   openBugs: number
   unassignedTasks: number
+  blockedTasks: number
   activeIteration: {
     id: string
     title: string
     totalTasks: number
     completedTasks: number
+    blockedTasks: number
     completionRate: number
   } | null
 }

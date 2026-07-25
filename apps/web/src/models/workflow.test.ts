@@ -53,6 +53,7 @@ const task = (id: string, column: string, kind: Task['kind'] = 'TASK'): Task => 
   due: '',
   tags: [],
   version: 1,
+  blockerCount: 0,
 })
 
 describe('task workflow helpers', () => {

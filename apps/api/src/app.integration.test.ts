@@ -218,6 +218,303 @@ describe('authenticated project flow', () => {
         .expect(200)
     }
   })
+  it('manages task blockers without allowing invalid dependency graphs', async () => {
+    const taskPath = `/api/v1/workspaces/${workspaceId}/tasks`,
+      projectColumns = await request(app.getHttpServer())
+        .get(`/api/v1/workspaces/${workspaceId}/projects/${projectId}/columns`)
+        .set('Cookie', cookie)
+        .expect(200),
+      blocker = await request(app.getHttpServer())
+        .post(taskPath)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({ projectId, columnId, title: '前置接口任务' })
+        .expect(201),
+      dependent = await request(app.getHttpServer())
+        .post(taskPath)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({ projectId, columnId, title: '下游验收任务' })
+        .expect(201),
+      otherProject = await request(app.getHttpServer())
+        .post(`/api/v1/workspaces/${workspaceId}/projects`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({ name: '依赖边界项目', code: 'LINK' })
+        .expect(201),
+      otherColumns = await request(app.getHttpServer())
+        .get(`/api/v1/workspaces/${workspaceId}/projects/${otherProject.body.id}/columns`)
+        .set('Cookie', cookie)
+        .expect(200),
+      otherTask = await request(app.getHttpServer())
+        .post(taskPath)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({
+          projectId: otherProject.body.id,
+          columnId: otherColumns.body[0].id,
+          title: '其他项目任务',
+        })
+        .expect(201),
+      completedDependent = await request(app.getHttpServer())
+        .post(taskPath)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({
+          projectId,
+          columnId: projectColumns.body.at(-1).id,
+          title: '已完成的下游任务',
+        })
+        .expect(201),
+      dependencyPath = `${taskPath}/${taskId}/dependencies`
+    const viewerEmail = `dependency-viewer-${Date.now()}@example.com`,
+      viewerPassword = 'dependency-viewer-password'
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/register')
+      .send({
+        email: viewerEmail,
+        password: viewerPassword,
+        name: '依赖观察者',
+        workspaceName: '观察者空间',
+      })
+      .expect(201)
+    await request(app.getHttpServer())
+      .post(`/api/v1/workspaces/${workspaceId}/members`)
+      .set('Cookie', cookie)
+      .set('x-csrf-token', csrf)
+      .send({ email: viewerEmail, role: 'VIEWER' })
+      .expect(201)
+    const viewerLogin = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ email: viewerEmail, password: viewerPassword })
+      .expect(201)
+    const viewerCookie = viewerLogin.headers['set-cookie'][0].split(';')[0],
+      viewerCsrf = viewerLogin.body.csrfToken as string
+    await request(app.getHttpServer())
+      .put(`${taskPath}/${taskId}/watch`)
+      .set('Cookie', viewerCookie)
+      .set('x-csrf-token', viewerCsrf)
+      .send({ watching: true })
+      .expect(200)
+    await request(app.getHttpServer())
+      .put(`${taskPath}/${completedDependent.body.id}/watch`)
+      .set('Cookie', viewerCookie)
+      .set('x-csrf-token', viewerCsrf)
+      .send({ watching: true })
+      .expect(200)
+
+    try {
+      await request(app.getHttpServer())
+        .post(dependencyPath)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({ blockerTaskId: blocker.body.id })
+        .expect(201)
+
+      const dependencies = await request(app.getHttpServer())
+        .get(dependencyPath)
+        .set('Cookie', cookie)
+        .expect(200)
+      expect(dependencies.body).toMatchObject({ blocked: true, blockerCount: 1 })
+      expect(dependencies.body.blockers[0]).toMatchObject({
+        id: blocker.body.id,
+        title: '前置接口任务',
+        blockerCount: 1,
+      })
+      await request(app.getHttpServer()).get(dependencyPath).set('Cookie', viewerCookie).expect(200)
+      await request(app.getHttpServer())
+        .post(dependencyPath)
+        .set('Cookie', viewerCookie)
+        .set('x-csrf-token', viewerCsrf)
+        .send({ blockerTaskId: dependent.body.id })
+        .expect(403)
+      const blockedNotification = await request(app.getHttpServer())
+        .get(`/api/v1/notifications?workspaceId=${workspaceId}`)
+        .set('Cookie', viewerCookie)
+        .expect(200)
+      expect(
+        blockedNotification.body.items.some(
+          (notification: { action: string }) => notification.action === 'task.blocked',
+        ),
+      ).toBe(true)
+
+      const listed = await request(app.getHttpServer())
+        .get(`${taskPath}?projectId=${projectId}`)
+        .set('Cookie', cookie)
+        .expect(200)
+      expect(listed.body.data.find((task: { id: string }) => task.id === taskId).blockerCount).toBe(
+        1,
+      )
+      const health = await request(app.getHttpServer())
+        .get(`/api/v1/workspaces/${workspaceId}/projects/${projectId}/health`)
+        .set('Cookie', cookie)
+        .expect(200)
+      expect(health.body.blockedTasks).toBe(1)
+
+      const candidates = await request(app.getHttpServer())
+        .get(`${taskPath}/${taskId}/dependency-candidates?query=任务`)
+        .set('Cookie', cookie)
+        .expect(200)
+      expect(candidates.body.data.map((task: { id: string }) => task.id)).not.toContain(
+        blocker.body.id,
+      )
+      expect(candidates.body.data.map((task: { id: string }) => task.id)).toContain(
+        dependent.body.id,
+      )
+      const outOfRangeCandidates = await request(app.getHttpServer())
+        .get(
+          `${taskPath}/${taskId}/dependency-candidates?query=${encodeURIComponent('下游验收任务')}&page=2&pageSize=1`,
+        )
+        .set('Cookie', cookie)
+        .expect(200)
+      expect(outOfRangeCandidates.body).toMatchObject({
+        data: [],
+        pagination: { page: 2, pageSize: 1, totalItems: 1, totalPages: 1 },
+      })
+
+      const completedDependencyPath = `${taskPath}/${completedDependent.body.id}/dependencies`
+      await request(app.getHttpServer())
+        .post(completedDependencyPath)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({ blockerTaskId: blocker.body.id })
+        .expect(201)
+      const completedDependencies = await request(app.getHttpServer())
+        .get(completedDependencyPath)
+        .set('Cookie', cookie)
+        .expect(200)
+      expect(completedDependencies.body).toMatchObject({ blocked: false, blockerCount: 0 })
+      expect(completedDependencies.body.blockers[0].blockerCount).toBe(0)
+      const blockerRelationships = await request(app.getHttpServer())
+        .get(`${taskPath}/${blocker.body.id}/dependencies`)
+        .set('Cookie', cookie)
+        .expect(200)
+      expect(
+        blockerRelationships.body.dependents.find(
+          (task: { id: string }) => task.id === completedDependent.body.id,
+        ).blockerCount,
+      ).toBe(0)
+      const completedNotifications = await request(app.getHttpServer())
+        .get(`/api/v1/notifications?workspaceId=${workspaceId}`)
+        .set('Cookie', viewerCookie)
+        .expect(200)
+      expect(
+        completedNotifications.body.items.some(
+          (notification: { action: string; taskId: string }) =>
+            notification.taskId === completedDependent.body.id &&
+            notification.action === 'task.dependency_created',
+        ),
+      ).toBe(true)
+
+      const self = await request(app.getHttpServer())
+        .post(dependencyPath)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({ blockerTaskId: taskId })
+        .expect(400)
+      expect(self.body.code).toBe('TASK_DEPENDENCY_SELF')
+      const duplicate = await request(app.getHttpServer())
+        .post(dependencyPath)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({ blockerTaskId: blocker.body.id })
+        .expect(409)
+      expect(duplicate.body.code).toBe('TASK_DEPENDENCY_EXISTS')
+      const cycle = await request(app.getHttpServer())
+        .post(`${taskPath}/${blocker.body.id}/dependencies`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({ blockerTaskId: taskId })
+        .expect(409)
+      expect(cycle.body.code).toBe('TASK_DEPENDENCY_CYCLE')
+      const crossProject = await request(app.getHttpServer())
+        .post(dependencyPath)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({ blockerTaskId: otherTask.body.id })
+        .expect(400)
+      expect(crossProject.body.code).toBe('TASK_DEPENDENCY_SCOPE')
+
+      const unchanged = await request(app.getHttpServer())
+        .get(`${taskPath}/${blocker.body.id}/dependencies`)
+        .set('Cookie', cookie)
+        .expect(200)
+      expect(unchanged.body.blockers).toHaveLength(0)
+
+      await request(app.getHttpServer())
+        .post(`${taskPath}/${blocker.body.id}/archive`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .expect(201)
+      const unblocked = await request(app.getHttpServer())
+        .get(dependencyPath)
+        .set('Cookie', cookie)
+        .expect(200)
+      expect(unblocked.body).toMatchObject({ blocked: false, blockerCount: 0 })
+      await request(app.getHttpServer())
+        .post(`${taskPath}/${blocker.body.id}/restore`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .expect(201)
+      const blockedAgain = await request(app.getHttpServer())
+        .get(dependencyPath)
+        .set('Cookie', cookie)
+        .expect(200)
+      expect(blockedAgain.body).toMatchObject({ blocked: true, blockerCount: 1 })
+      const notificationsAfterRestore = await request(app.getHttpServer())
+        .get(`/api/v1/notifications?workspaceId=${workspaceId}`)
+        .set('Cookie', viewerCookie)
+        .expect(200)
+      expect(
+        notificationsAfterRestore.body.items.some(
+          (notification: { action: string; taskId: string }) =>
+            notification.taskId === completedDependent.body.id &&
+            notification.action === 'task.blocked',
+        ),
+      ).toBe(false)
+
+      await request(app.getHttpServer())
+        .delete(`${dependencyPath}/${blocker.body.id}`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .expect(200)
+      const resolved = await request(app.getHttpServer())
+        .get(dependencyPath)
+        .set('Cookie', cookie)
+        .expect(200)
+      expect(resolved.body).toMatchObject({ blocked: false, blockerCount: 0 })
+      const resolvedNotification = await request(app.getHttpServer())
+        .get(`/api/v1/notifications?workspaceId=${workspaceId}`)
+        .set('Cookie', viewerCookie)
+        .expect(200)
+      expect(
+        resolvedNotification.body.items.some(
+          (notification: { action: string }) => notification.action === 'task.blocker_resolved',
+        ),
+      ).toBe(true)
+    } finally {
+      await request(app.getHttpServer())
+        .delete(`${taskPath}/${blocker.body.id}`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+      await request(app.getHttpServer())
+        .delete(`${taskPath}/${dependent.body.id}`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+      await request(app.getHttpServer())
+        .delete(`${taskPath}/${otherTask.body.id}`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+      await request(app.getHttpServer())
+        .delete(`${taskPath}/${completedDependent.body.id}`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+      await request(app.getHttpServer())
+        .delete(`/api/v1/workspaces/${workspaceId}/projects/${otherProject.body.id}`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+    }
+  })
   it('automatically follows created tasks and can toggle following', async () => {
     const initial = await request(app.getHttpServer())
       .get(`/api/v1/workspaces/${workspaceId}/tasks/${taskId}/watch`)
@@ -786,6 +1083,28 @@ describe('authenticated project flow', () => {
       .set('x-csrf-token', csrf)
       .send({ taskIds: [unfinished.body.id], action: 'ADD' })
       .expect(200)
+    await request(app.getHttpServer())
+      .post(`/api/v1/workspaces/${workspaceId}/tasks/${completed.body.id}/dependencies`)
+      .set('Cookie', cookie)
+      .set('x-csrf-token', csrf)
+      .send({ blockerTaskId: unfinished.body.id })
+      .expect(201)
+    const currentIterationTasks = await request(app.getHttpServer())
+      .get(`${path}/${current.body.id}/tasks`)
+      .set('Cookie', cookie)
+      .expect(200)
+    expect(
+      currentIterationTasks.body.find((task: { id: string }) => task.id === completed.body.id)
+        .blockerCount,
+    ).toBe(0)
+    const listedProjectTasks = await request(app.getHttpServer())
+      .get(`/api/v1/workspaces/${workspaceId}/tasks?projectId=${project.body.id}`)
+      .set('Cookie', cookie)
+      .expect(200)
+    expect(
+      listedProjectTasks.body.data.find((task: { id: string }) => task.id === completed.body.id)
+        .blockerCount,
+    ).toBe(0)
 
     const otherIteration = await request(app.getHttpServer())
       .post(`/api/v1/workspaces/${workspaceId}/projects/${otherProject.body.id}/iterations`)
@@ -817,10 +1136,12 @@ describe('authenticated project flow', () => {
       overdueTasks: 1,
       openBugs: 1,
       unassignedTasks: 1,
+      blockedTasks: 0,
       activeIteration: {
         id: current.body.id,
         totalTasks: 2,
         completedTasks: 1,
+        blockedTasks: 0,
         completionRate: 50,
       },
     })
@@ -883,7 +1204,7 @@ describe('authenticated project flow', () => {
     expect(candidatePage.body.data).toHaveLength(1)
     expect(candidatePage.body.data[0].title).toBe('候选任务三')
   })
-  it('exports and restores iteration assignments', async () => {
+  it('exports and restores iteration assignments and task dependencies', async () => {
     const workspace = await request(app.getHttpServer())
         .post('/api/v1/workspaces')
         .set('Cookie', cookie)
@@ -911,16 +1232,32 @@ describe('authenticated project flow', () => {
           endDate: '2026-07-31',
         })
         .expect(201)
+    const blocked = await request(app.getHttpServer())
+        .post(`/api/v1/workspaces/${workspace.body.id}/tasks`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({
+          projectId: project.body.id,
+          columnId: columns.body[0].id,
+          iterationId: iteration.body.id,
+          title: '备份中的迭代任务',
+        })
+        .expect(201),
+      blocker = await request(app.getHttpServer())
+        .post(`/api/v1/workspaces/${workspace.body.id}/tasks`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({
+          projectId: project.body.id,
+          columnId: columns.body[0].id,
+          title: '备份中的前置任务',
+        })
+        .expect(201)
     await request(app.getHttpServer())
-      .post(`/api/v1/workspaces/${workspace.body.id}/tasks`)
+      .post(`/api/v1/workspaces/${workspace.body.id}/tasks/${blocked.body.id}/dependencies`)
       .set('Cookie', cookie)
       .set('x-csrf-token', csrf)
-      .send({
-        projectId: project.body.id,
-        columnId: columns.body[0].id,
-        iterationId: iteration.body.id,
-        title: '备份中的迭代任务',
-      })
+      .send({ blockerTaskId: blocker.body.id })
       .expect(201)
 
     const exported = await request(app.getHttpServer())
@@ -950,9 +1287,19 @@ describe('authenticated project flow', () => {
       .get(`/api/v1/workspaces/${restored.body.id}/tasks?projectId=${restoredProjects.body[0].id}`)
       .set('Cookie', cookie)
       .expect(200)
-    expect(restoredTasks.body.data[0]).toMatchObject({
+    const restoredBlockedTask = restoredTasks.body.data.find(
+      (task: { title: string }) => task.title === '备份中的迭代任务',
+    )
+    expect(restoredBlockedTask).toMatchObject({
       title: '备份中的迭代任务',
       iterationId: restoredIterations.body[0].id,
+      blockerCount: 1,
     })
+    const restoredDependencies = await request(app.getHttpServer())
+      .get(`/api/v1/workspaces/${restored.body.id}/tasks/${restoredBlockedTask.id}/dependencies`)
+      .set('Cookie', cookie)
+      .expect(200)
+    expect(restoredDependencies.body).toMatchObject({ blocked: true, blockerCount: 1 })
+    expect(restoredDependencies.body.blockers[0].title).toBe('备份中的前置任务')
   })
 })

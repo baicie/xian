@@ -6,6 +6,7 @@ const task = (overrides: Partial<HealthTask> = {}): HealthTask => ({
   dueDate: null,
   done: false,
   assigned: true,
+  blocked: false,
   iterationId: null,
   ...overrides,
 })
@@ -15,8 +16,14 @@ describe('project health', () => {
     const health = calculateProjectHealth(
       [
         task({ done: true, iterationId: 'active' }),
-        task({ kind: 'BUG', dueDate: '2026-07-24', assigned: false, iterationId: 'active' }),
-        task({ dueDate: '2026-07-26' }),
+        task({
+          kind: 'BUG',
+          dueDate: '2026-07-24',
+          assigned: false,
+          blocked: true,
+          iterationId: 'active',
+        }),
+        task({ dueDate: '2026-07-26', blocked: true }),
       ],
       { id: 'active', title: '七月迭代' },
       '2026-07-25',
@@ -29,11 +36,13 @@ describe('project health', () => {
       overdueTasks: 1,
       openBugs: 1,
       unassignedTasks: 1,
+      blockedTasks: 2,
       activeIteration: {
         id: 'active',
         title: '七月迭代',
         totalTasks: 2,
         completedTasks: 1,
+        blockedTasks: 1,
         completionRate: 50,
       },
     })
