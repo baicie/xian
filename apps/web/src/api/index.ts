@@ -483,6 +483,12 @@ export const api = {
       body: JSON.stringify({ title }),
     })
   },
+  createSubtasks(workspaceId: string, taskId: string, titles: string[]) {
+    return request<Subtask[]>(`/workspaces/${workspaceId}/tasks/${taskId}/subtasks/batch`, {
+      method: 'POST',
+      body: JSON.stringify({ titles }),
+    })
+  },
   updateSubtask(
     workspaceId: string,
     taskId: string,
