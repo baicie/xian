@@ -80,6 +80,18 @@ jobs:
             mkdir -p "$APP_DIR"
             cd "$APP_DIR"
 
+            # Git-tagged images are not dangling, so the default prune leaves every deployment behind.
+            docker container prune --force >/dev/null
+            docker image prune --all --force >/dev/null
+            docker network prune --force >/dev/null
+            docker builder prune --all --force --filter 'until=168h' >/dev/null 2>&1 || true
+            AVAILABLE_KB="$(df -Pk "$APP_DIR" | awk 'NR==2 {print $4}')"
+            if [ -z "$AVAILABLE_KB" ] || [ "$AVAILABLE_KB" -lt 1048576 ]; then
+              echo "Less than 1 GiB is available for deployment"
+              docker system df
+              exit 1
+            fi
+
             PORT_FILE="$APP_DIR/.app-port"
             if [ -s "$PORT_FILE" ]; then
               APP_PORT="$(cat "$PORT_FILE")"
@@ -197,7 +209,10 @@ jobs:
               if curl -fsS "http://127.0.0.1:${APP_PORT}/api/v1/health/ready" >/dev/null 2>&1; then
                 curl -fsS "http://127.0.0.1:${APP_PORT}/" >/dev/null
                 echo "task-harbor healthy on port ${APP_PORT} after ${i}s"
-                docker image prune -f >/dev/null 2>&1 || true
+                docker container prune --force >/dev/null
+                docker image prune --all --force >/dev/null
+                docker network prune --force >/dev/null
+                docker builder prune --all --force --filter 'until=168h' >/dev/null 2>&1 || true
                 exit 0
               fi
               sleep 2
