@@ -48,6 +48,7 @@ export class TransferService {
       projects,
       columns,
       transitions,
+      iterations,
       tasks,
       assignees,
       labels,
@@ -68,7 +69,9 @@ export class TransferService {
       this.db
         .client`SELECT wt.project_id AS "projectSourceId",source.id AS "fromColumnSourceId",target.id AS "toColumnSourceId",wt.name,wt.bug_name AS "bugName",wt.requires_comment AS "requiresComment",wt.position FROM workflow_transitions wt JOIN board_columns source ON source.id=wt.from_column_id JOIN board_columns target ON target.id=wt.to_column_id WHERE wt.workspace_id=${workspaceId} ORDER BY wt.position`,
       this.db
-        .client`SELECT id AS "sourceId",project_id AS "projectSourceId",column_id AS "columnSourceId",number,title,description,kind,type_fields AS "typeFields",priority,due_date AS "dueDate",position,version,archived_at IS NOT NULL AS archived FROM tasks WHERE workspace_id=${workspaceId} AND deleted_at IS NULL ORDER BY project_id,number`,
+        .client`SELECT id AS "sourceId",project_id AS "projectSourceId",title,goal,start_date::text AS "startDate",end_date::text AS "endDate",status,version,closed_at AS "closedAt" FROM iterations WHERE workspace_id=${workspaceId} ORDER BY project_id,created_at`,
+      this.db
+        .client`SELECT id AS "sourceId",project_id AS "projectSourceId",column_id AS "columnSourceId",iteration_id AS "iterationSourceId",number,title,description,kind,type_fields AS "typeFields",priority,due_date AS "dueDate",position,version,archived_at IS NOT NULL AS archived FROM tasks WHERE workspace_id=${workspaceId} AND deleted_at IS NULL ORDER BY project_id,number`,
       this.db
         .client`SELECT ta.task_id AS "taskSourceId",u.email FROM task_assignees ta JOIN users u ON u.id=ta.user_id WHERE ta.workspace_id=${workspaceId}`,
       this.db
@@ -88,6 +91,7 @@ export class TransferService {
       this.db
         .client`SELECT id AS "sourceId",original_name AS "originalName",content_type AS "contentType",size_bytes AS "sizeBytes",sha256,storage_key AS "storageKey" FROM assets WHERE workspace_id=${workspaceId} ORDER BY created_at`,
     ])) as [
+      ExportRow[],
       ExportRow[],
       ExportRow[],
       ExportRow[],
@@ -130,7 +134,7 @@ export class TransferService {
         })),
     }))
     return {
-      schemaVersion: 4,
+      schemaVersion: 5,
       workspace: { name: workspace!.name },
       members: members as WorkspaceSnapshot['members'],
       projects: projects.map((project) => ({
@@ -151,6 +155,10 @@ export class TransferService {
           .filter((task) => task.projectSourceId === project.sourceId)
           .map(({ projectSourceId: _, ...task }) => task),
       })) as WorkspaceSnapshot['projects'],
+      iterations: iterations.map((iteration) => ({
+        ...iteration,
+        closedAt: iteration.closedAt ? iso(iteration.closedAt) : null,
+      })) as WorkspaceSnapshot['iterations'],
       documents: documents.map((document) => ({
         ...document,
         versions: versions
@@ -236,12 +244,22 @@ export class TransferService {
           >`INSERT INTO projects(workspace_id,name,code,description,color,lead_id,workflow_template,archived_at) VALUES(${workspace!.id},${project.name},${project.code},${project.description},${project.color},${userId},${project.workflowTemplate ?? 'CUSTOM'},${project.archived ? now : null}) RETURNING id`
           projectIds.set(project.sourceId, created!.id)
           const restoredColumnIds = new Map<string, string>(),
+            restoredIterationIds = new Map<string, string>(),
             restoredColumnId = (sourceId: string) => {
               const id = restoredColumnIds.get(sourceId)
               if (!id)
                 throw new BadRequestException({
                   code: 'BACKUP_WORKFLOW_INVALID',
                   message: '备份中的任务或流程引用了其他项目的状态',
+                })
+              return id
+            },
+            restoredIterationId = (sourceId: string) => {
+              const id = restoredIterationIds.get(sourceId)
+              if (!id)
+                throw new BadRequestException({
+                  code: 'BACKUP_ITERATION_INVALID',
+                  message: '备份中的任务引用了不存在或其他项目的迭代',
                 })
               return id
             }
@@ -289,10 +307,18 @@ export class TransferService {
                 await sql`INSERT INTO workflow_transitions(workspace_id,project_id,from_column_id,to_column_id,name,bug_name,requires_comment,position) VALUES(${workspace!.id},${created!.id},${restoredColumnId(column.sourceId)},${restoredColumnId(previous.sourceId)},'驳回修改','验证失败',true,${(index + 1) * 1000 + 500})`
               }
             }
+          for (const iteration of snapshot.iterations.filter(
+            (item) => item.projectSourceId === project.sourceId,
+          )) {
+            const [next] = await sql<
+              { id: string }[]
+            >`INSERT INTO iterations(workspace_id,project_id,title,goal,start_date,end_date,status,version,created_by,closed_at) VALUES(${workspace!.id},${created!.id},${iteration.title},${iteration.goal},${iteration.startDate},${iteration.endDate},${iteration.status},${iteration.version},${userId},${iteration.closedAt}) RETURNING id`
+            restoredIterationIds.set(iteration.sourceId, next!.id)
+          }
           for (const task of project.tasks) {
             const [next] = await sql<
               { id: string }[]
-            >`INSERT INTO tasks(workspace_id,project_id,column_id,number,title,description,kind,type_fields,priority,creator_id,due_date,position,version,archived_at) VALUES(${workspace!.id},${created!.id},${restoredColumnId(task.columnSourceId)},${task.number},${task.title},${task.description},${task.kind},${JSON.stringify(task.typeFields)}::jsonb,${task.priority},${userId},${task.dueDate},${task.position},${task.version},${task.archived ? now : null}) RETURNING id`
+            >`INSERT INTO tasks(workspace_id,project_id,column_id,iteration_id,number,title,description,kind,type_fields,priority,creator_id,due_date,position,version,archived_at) VALUES(${workspace!.id},${created!.id},${restoredColumnId(task.columnSourceId)},${task.iterationSourceId ? restoredIterationId(task.iterationSourceId) : null},${task.number},${task.title},${task.description},${task.kind},${JSON.stringify(task.typeFields)}::jsonb,${task.priority},${userId},${task.dueDate},${task.position},${task.version},${task.archived ? now : null}) RETURNING id`
             taskIds.set(task.sourceId, next!.id)
             for (const email of task.assigneeEmails)
               await sql`INSERT INTO task_assignees(workspace_id,task_id,user_id) SELECT ${workspace!.id},${next!.id},u.id FROM users u JOIN memberships m ON m.user_id=u.id AND m.workspace_id=${workspace!.id} WHERE u.email=${email} ON CONFLICT DO NOTHING`

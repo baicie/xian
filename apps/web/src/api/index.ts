@@ -1,6 +1,7 @@
 import type { Task } from '@/models/board'
 import { createTaskTypeFields, type TaskTypeFields } from '@/models/taskFields'
 import type { ProjectWorkflow, TaskTransitionEvent, WorkflowTemplateKey } from '@/models/workflow'
+import type { Iteration, IterationTask, ProjectHealth } from '@/models/iteration'
 
 export type DocumentKind = 'ARCHITECTURE' | 'REQUIREMENT' | 'DESIGN' | 'MEETING' | 'RETROSPECTIVE'
 export type WorkspaceDocument = {
@@ -148,6 +149,7 @@ type RawTask = {
   id: string
   number: number
   projectId: string
+  iterationId: string | null
   columnId: string
   title: string
   description: string
@@ -166,6 +168,7 @@ const mapTask = (task: RawTask): Task => ({
   id: task.id,
   number: task.number,
   projectId: task.projectId,
+  iterationId: task.iterationId,
   title: task.title,
   description: task.description,
   kind: task.kind,
@@ -324,6 +327,75 @@ export const api = {
       `/workspaces/${workspaceId}/projects`,
     )
   },
+  iterations(workspaceId: string, projectId: string) {
+    return request<Iteration[]>(`/workspaces/${workspaceId}/projects/${projectId}/iterations`)
+  },
+  createIteration(
+    workspaceId: string,
+    projectId: string,
+    input: Pick<Iteration, 'title' | 'goal' | 'startDate' | 'endDate'>,
+  ) {
+    return request<Iteration>(`/workspaces/${workspaceId}/projects/${projectId}/iterations`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+  },
+  updateIteration(
+    workspaceId: string,
+    projectId: string,
+    iterationId: string,
+    input: Partial<Pick<Iteration, 'title' | 'goal' | 'startDate' | 'endDate'>> & {
+      version: number
+    },
+  ) {
+    return request<Iteration>(
+      `/workspaces/${workspaceId}/projects/${projectId}/iterations/${iterationId}`,
+      { method: 'PATCH', body: JSON.stringify(input) },
+    )
+  },
+  startIteration(workspaceId: string, projectId: string, iterationId: string) {
+    return request<Iteration>(
+      `/workspaces/${workspaceId}/projects/${projectId}/iterations/${iterationId}/start`,
+      { method: 'POST' },
+    )
+  },
+  closeIteration(
+    workspaceId: string,
+    projectId: string,
+    iterationId: string,
+    input:
+      | { unfinishedAction: 'BACKLOG' }
+      | { unfinishedAction: 'CARRY_OVER'; targetIterationId: string },
+  ) {
+    return request<{
+      iteration: Iteration
+      movedTasks: number
+      targetIterationId: string | null
+    }>(`/workspaces/${workspaceId}/projects/${projectId}/iterations/${iterationId}/close`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+  },
+  iterationTasks(workspaceId: string, projectId: string, iterationId: string) {
+    return request<IterationTask[]>(
+      `/workspaces/${workspaceId}/projects/${projectId}/iterations/${iterationId}/tasks`,
+    )
+  },
+  moveIterationTasks(
+    workspaceId: string,
+    projectId: string,
+    iterationId: string,
+    taskIds: string[],
+    action: 'ADD' | 'REMOVE',
+  ) {
+    return request<{ updated: number }>(
+      `/workspaces/${workspaceId}/projects/${projectId}/iterations/${iterationId}/tasks`,
+      { method: 'PATCH', body: JSON.stringify({ taskIds, action }) },
+    )
+  },
+  projectHealth(workspaceId: string, projectId: string) {
+    return request<ProjectHealth>(`/workspaces/${workspaceId}/projects/${projectId}/health`)
+  },
   createProject(
     workspaceId: string,
     input: { name: string; code: string; workflowTemplate?: WorkflowTemplateKey },
@@ -412,6 +484,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({
         projectId: task.projectId,
+        iterationId: task.iterationId,
         columnId: task.column,
         title: task.title,
         description: task.description,
@@ -433,6 +506,7 @@ export const api = {
         kind: task.kind,
         typeFields: task.typeFields,
         columnId: task.column,
+        iterationId: task.iterationId,
         priority: { 高: 'HIGH', 中: 'MEDIUM', 低: 'LOW' }[task.priority],
         assigneeIds: task.assigneeId ? [task.assigneeId] : [],
         dueDate: task.due || null,

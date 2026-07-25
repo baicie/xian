@@ -154,7 +154,7 @@ export class TaskService {
       priority = q.priority ?? null,
       kind = q.kind ?? null
     const data = await this.db
-      .client`SELECT t.id,t.number,t.kind,t.title,t.description,t.type_fields AS "typeFields",t.priority,t.due_date AS "dueDate",t.position,t.version,t.project_id AS "projectId",t.column_id AS "columnId",p.code,c.name AS "columnName",(SELECT count(*)::int FROM checklist_items ci WHERE ci.task_id=t.id) AS "subtaskTotal",(SELECT count(*)::int FROM checklist_items ci WHERE ci.task_id=t.id AND ci.is_done) AS "subtaskDone",coalesce(json_agg(json_build_object('id',u.id,'name',u.name)) FILTER(WHERE u.id IS NOT NULL),'[]') AS assignees,coalesce((SELECT json_agg(l.name ORDER BY l.name) FROM task_labels tl JOIN labels l ON l.id=tl.label_id WHERE tl.task_id=t.id),'[]') AS labels FROM tasks t JOIN projects p ON p.id=t.project_id JOIN board_columns c ON c.id=t.column_id LEFT JOIN task_assignees ta ON ta.task_id=t.id LEFT JOIN users u ON u.id=ta.user_id WHERE t.workspace_id=${workspaceId} AND t.deleted_at IS NULL AND ((${q.archived}=true AND t.archived_at IS NOT NULL) OR (${q.archived}=false AND t.archived_at IS NULL)) AND (${project}::uuid IS NULL OR t.project_id=${project}) AND (${needle}::text IS NULL OR t.title ILIKE ${needle}) AND (${priority}::task_priority IS NULL OR t.priority=${priority}) AND (${kind}::task_kind IS NULL OR t.kind=${kind}) AND (${q.mine}=false OR EXISTS(SELECT 1 FROM task_assignees mine_ta WHERE mine_ta.task_id=t.id AND mine_ta.user_id=${userId}) OR EXISTS(SELECT 1 FROM task_watchers mine_tw WHERE mine_tw.task_id=t.id AND mine_tw.user_id=${userId})) GROUP BY t.id,p.code,c.name,c.position ORDER BY c.position,t.position LIMIT ${q.pageSize} OFFSET ${offset}`
+      .client`SELECT t.id,t.number,t.kind,t.title,t.description,t.type_fields AS "typeFields",t.priority,t.due_date AS "dueDate",t.position,t.version,t.project_id AS "projectId",t.column_id AS "columnId",t.iteration_id AS "iterationId",p.code,c.name AS "columnName",(SELECT count(*)::int FROM checklist_items ci WHERE ci.task_id=t.id) AS "subtaskTotal",(SELECT count(*)::int FROM checklist_items ci WHERE ci.task_id=t.id AND ci.is_done) AS "subtaskDone",coalesce(json_agg(json_build_object('id',u.id,'name',u.name)) FILTER(WHERE u.id IS NOT NULL),'[]') AS assignees,coalesce((SELECT json_agg(l.name ORDER BY l.name) FROM task_labels tl JOIN labels l ON l.id=tl.label_id WHERE tl.task_id=t.id),'[]') AS labels FROM tasks t JOIN projects p ON p.id=t.project_id JOIN board_columns c ON c.id=t.column_id LEFT JOIN task_assignees ta ON ta.task_id=t.id LEFT JOIN users u ON u.id=ta.user_id WHERE t.workspace_id=${workspaceId} AND t.deleted_at IS NULL AND ((${q.archived}=true AND t.archived_at IS NOT NULL) OR (${q.archived}=false AND t.archived_at IS NULL)) AND (${project}::uuid IS NULL OR t.project_id=${project}) AND (${needle}::text IS NULL OR t.title ILIKE ${needle}) AND (${priority}::task_priority IS NULL OR t.priority=${priority}) AND (${kind}::task_kind IS NULL OR t.kind=${kind}) AND (${q.mine}=false OR EXISTS(SELECT 1 FROM task_assignees mine_ta WHERE mine_ta.task_id=t.id AND mine_ta.user_id=${userId}) OR EXISTS(SELECT 1 FROM task_watchers mine_tw WHERE mine_tw.task_id=t.id AND mine_tw.user_id=${userId})) GROUP BY t.id,p.code,c.name,c.position ORDER BY c.position,t.position LIMIT ${q.pageSize} OFFSET ${offset}`
     const countRows = await this.db.client<
       { count: number }[]
     >`SELECT count(*)::int AS count FROM tasks t WHERE workspace_id=${workspaceId} AND deleted_at IS NULL AND ((${q.archived}=true AND archived_at IS NOT NULL) OR (${q.archived}=false AND archived_at IS NULL)) AND (${project}::uuid IS NULL OR project_id=${project}) AND (${kind}::task_kind IS NULL OR kind=${kind}) AND (${q.mine}=false OR EXISTS(SELECT 1 FROM task_assignees mine_ta WHERE mine_ta.task_id=t.id AND mine_ta.user_id=${userId}) OR EXISTS(SELECT 1 FROM task_watchers mine_tw WHERE mine_tw.task_id=t.id AND mine_tw.user_id=${userId}))`
@@ -175,6 +175,21 @@ export class TaskService {
       .client`SELECT 1 FROM board_columns WHERE id=${input.columnId} AND project_id=${input.projectId} AND workspace_id=${workspaceId}`
     if (!column) throw new NotFoundException({ code: 'COLUMN_NOT_FOUND', message: '看板列不存在' })
     return this.db.client.begin(async (sql) => {
+      if (input.iterationId) {
+        const [iteration] = await sql<
+          { status: 'PLANNED' | 'ACTIVE' | 'CLOSED' }[]
+        >`SELECT status FROM iterations WHERE id=${input.iterationId} AND workspace_id=${workspaceId} AND project_id=${input.projectId} FOR SHARE`
+        if (!iteration)
+          throw new BadRequestException({
+            code: 'TASK_ITERATION_INVALID',
+            message: '迭代不存在或不属于当前项目',
+          })
+        if (iteration.status === 'CLOSED')
+          throw new BadRequestException({
+            code: 'ITERATION_CLOSED',
+            message: '任务不能加入已关闭的迭代',
+          })
+      }
       const [project] = await sql<
         { number: number; code: string }[]
       >`UPDATE projects SET next_task_number=next_task_number+1 WHERE id=${input.projectId} AND workspace_id=${workspaceId} RETURNING next_task_number-1 AS number,code`
@@ -185,7 +200,7 @@ export class TaskService {
       >`SELECT coalesce(max(position),0)+1000 AS position FROM tasks WHERE column_id=${input.columnId}`
       const [task] = await sql<
         { id: string; version: number }[]
-      >`INSERT INTO tasks(workspace_id,project_id,column_id,number,title,description,kind,type_fields,priority,creator_id,due_date,position) VALUES(${workspaceId},${input.projectId},${input.columnId},${project.number},${input.title},${input.description},${input.kind},${JSON.stringify(input.typeFields)}::jsonb,${input.priority},${userId},${input.dueDate},${positionRows[0]?.position ?? 1000}) RETURNING id,version`
+      >`INSERT INTO tasks(workspace_id,project_id,column_id,iteration_id,number,title,description,kind,type_fields,priority,creator_id,due_date,position) VALUES(${workspaceId},${input.projectId},${input.columnId},${input.iterationId},${project.number},${input.title},${input.description},${input.kind},${JSON.stringify(input.typeFields)}::jsonb,${input.priority},${userId},${input.dueDate},${positionRows[0]?.position ?? 1000}) RETURNING id,version`
       for (const assignee of input.assigneeIds)
         await sql`INSERT INTO task_assignees(workspace_id,task_id,user_id) SELECT ${workspaceId},${task!.id},user_id FROM memberships WHERE workspace_id=${workspaceId} AND user_id=${assignee} AND disabled_at IS NULL`
       await sql`INSERT INTO task_watchers(workspace_id,task_id,user_id) VALUES(${workspaceId},${task!.id},${userId}) ON CONFLICT DO NOTHING`
@@ -329,14 +344,34 @@ export class TaskService {
           version: number
           title: string
           kind: 'TASK' | 'STORY' | 'BUG'
+          iteration_id: string | null
         }[]
-      >`SELECT column_id,project_id,version,title,kind FROM tasks WHERE id=${id} AND workspace_id=${workspaceId} AND deleted_at IS NULL`
+      >`SELECT column_id,project_id,version,title,kind,iteration_id FROM tasks WHERE id=${id} AND workspace_id=${workspaceId} AND deleted_at IS NULL`
       if (!before) throw new NotFoundException({ code: 'TASK_NOT_FOUND', message: '任务不存在' })
       if (input.columnId) {
         const [column] =
           await sql`SELECT 1 FROM board_columns WHERE id=${input.columnId} AND project_id=${before.project_id} AND workspace_id=${workspaceId}`
         if (!column)
           throw new NotFoundException({ code: 'COLUMN_NOT_FOUND', message: '看板列不存在' })
+      }
+      if (
+        'iterationId' in input &&
+        input.iterationId &&
+        input.iterationId !== before.iteration_id
+      ) {
+        const [iteration] = await sql<
+          { status: 'PLANNED' | 'ACTIVE' | 'CLOSED' }[]
+        >`SELECT status FROM iterations WHERE id=${input.iterationId} AND workspace_id=${workspaceId} AND project_id=${before.project_id} FOR SHARE`
+        if (!iteration)
+          throw new BadRequestException({
+            code: 'TASK_ITERATION_INVALID',
+            message: '迭代不存在或不属于当前项目',
+          })
+        if (iteration.status === 'CLOSED')
+          throw new BadRequestException({
+            code: 'ITERATION_CLOSED',
+            message: '任务不能加入已关闭的迭代',
+          })
       }
       const transition =
         input.columnId && input.columnId !== before.column_id
@@ -351,7 +386,7 @@ export class TaskService {
           : null
       const [task] = await sql<
         { id: string; version: number }[]
-      >`UPDATE tasks SET title=coalesce(${input.title ?? null},title),description=coalesce(${input.description ?? null},description),kind=coalesce(${input.kind ?? null}::task_kind,kind),type_fields=CASE WHEN ${'typeFields' in input} THEN ${input.typeFields === undefined ? null : JSON.stringify(input.typeFields)}::jsonb ELSE type_fields END,priority=coalesce(${input.priority ?? null}::task_priority,priority),column_id=coalesce(${input.columnId ?? null}::uuid,column_id),due_date=CASE WHEN ${'dueDate' in input} THEN ${input.dueDate ?? null}::date ELSE due_date END,version=version+1,updated_at=now() WHERE id=${id} AND workspace_id=${workspaceId} AND version=${input.version} RETURNING id,version`
+      >`UPDATE tasks SET title=coalesce(${input.title ?? null},title),description=coalesce(${input.description ?? null},description),kind=coalesce(${input.kind ?? null}::task_kind,kind),type_fields=CASE WHEN ${'typeFields' in input} THEN ${input.typeFields === undefined ? null : JSON.stringify(input.typeFields)}::jsonb ELSE type_fields END,priority=coalesce(${input.priority ?? null}::task_priority,priority),column_id=coalesce(${input.columnId ?? null}::uuid,column_id),iteration_id=CASE WHEN ${'iterationId' in input} THEN ${input.iterationId ?? null}::uuid ELSE iteration_id END,due_date=CASE WHEN ${'dueDate' in input} THEN ${input.dueDate ?? null}::date ELSE due_date END,version=version+1,updated_at=now() WHERE id=${id} AND workspace_id=${workspaceId} AND version=${input.version} RETURNING id,version`
       if (!task)
         throw new ConflictException({
           code: 'TASK_VERSION_CONFLICT',

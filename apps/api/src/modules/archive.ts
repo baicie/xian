@@ -27,6 +27,7 @@ const stateType = z.enum(['BACKLOG', 'ACTIVE', 'REVIEW', 'DONE'])
 const task = z.object({
   sourceId: z.string().uuid(),
   columnSourceId: z.string().uuid(),
+  iterationSourceId: z.string().uuid().nullable().default(null),
   number: z.number().int(),
   title: z.string(),
   description: z.string(),
@@ -69,6 +70,17 @@ const project = z.object({
   columns: z.array(column),
   transitions: z.array(transition).optional(),
   tasks: z.array(task),
+})
+const iteration = z.object({
+  sourceId: z.string().uuid(),
+  projectSourceId: z.string().uuid(),
+  title: z.string(),
+  goal: z.string(),
+  startDate: z.string(),
+  endDate: z.string(),
+  status: z.enum(['PLANNED', 'ACTIVE', 'CLOSED']),
+  version: z.number().int(),
+  closedAt: z.string().nullable(),
 })
 const documentVersion = z.object({
   version: z.number().int(),
@@ -115,10 +127,11 @@ const asset = z.object({
   sha256: z.string().length(64),
 })
 export const snapshotSchema = z.object({
-  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
+  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
   workspace: z.object({ name: z.string() }),
   members: z.array(member),
   projects: z.array(project),
+  iterations: z.array(iteration).default([]),
   documents: z.array(document),
   plans: z.array(plan),
   assets: z.array(asset).default([]),

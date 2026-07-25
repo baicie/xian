@@ -703,4 +703,219 @@ describe('authenticated project flow', () => {
       .expect(201)
     expect(started.body).toMatchObject({ columnId: columns.body[1].id, actionName: '开始开发' })
   })
+  it('manages iteration scope, project health, and explicit carry-over', async () => {
+    const project = await request(app.getHttpServer())
+        .post(`/api/v1/workspaces/${workspaceId}/projects`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({ name: '迭代验证', code: 'ITER' })
+        .expect(201),
+      otherProject = await request(app.getHttpServer())
+        .post(`/api/v1/workspaces/${workspaceId}/projects`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({ name: '其他项目', code: 'OTHR' })
+        .expect(201),
+      columns = await request(app.getHttpServer())
+        .get(`/api/v1/workspaces/${workspaceId}/projects/${project.body.id}/columns`)
+        .set('Cookie', cookie)
+        .expect(200),
+      path = `/api/v1/workspaces/${workspaceId}/projects/${project.body.id}/iterations`,
+      current = await request(app.getHttpServer())
+        .post(path)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({
+          title: '当前迭代',
+          goal: '验证完整生命周期',
+          startDate: '2026-07-20',
+          endDate: '2026-07-31',
+        })
+        .expect(201),
+      next = await request(app.getHttpServer())
+        .post(path)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({
+          title: '下一迭代',
+          goal: '接收未完成工作',
+          startDate: '2026-08-01',
+          endDate: '2026-08-14',
+        })
+        .expect(201)
+
+    await request(app.getHttpServer())
+      .post(`${path}/${current.body.id}/start`)
+      .set('Cookie', cookie)
+      .set('x-csrf-token', csrf)
+      .expect(201)
+    const duplicateActive = await request(app.getHttpServer())
+      .post(`${path}/${next.body.id}/start`)
+      .set('Cookie', cookie)
+      .set('x-csrf-token', csrf)
+      .expect(409)
+    expect(duplicateActive.body.code).toBe('ITERATION_ACTIVE_EXISTS')
+
+    const unfinished = await request(app.getHttpServer())
+        .post(`/api/v1/workspaces/${workspaceId}/tasks`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({
+          projectId: project.body.id,
+          columnId: columns.body[0].id,
+          title: '逾期缺陷',
+          kind: 'BUG',
+          dueDate: '2020-01-01',
+        })
+        .expect(201),
+      completed = await request(app.getHttpServer())
+        .post(`/api/v1/workspaces/${workspaceId}/tasks`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({
+          projectId: project.body.id,
+          columnId: columns.body.at(-1).id,
+          iterationId: current.body.id,
+          title: '已完成任务',
+        })
+        .expect(201)
+
+    await request(app.getHttpServer())
+      .patch(`${path}/${current.body.id}/tasks`)
+      .set('Cookie', cookie)
+      .set('x-csrf-token', csrf)
+      .send({ taskIds: [unfinished.body.id], action: 'ADD' })
+      .expect(200)
+
+    const otherIteration = await request(app.getHttpServer())
+      .post(`/api/v1/workspaces/${workspaceId}/projects/${otherProject.body.id}/iterations`)
+      .set('Cookie', cookie)
+      .set('x-csrf-token', csrf)
+      .send({
+        title: '跨项目迭代',
+        goal: '',
+        startDate: '2026-07-20',
+        endDate: '2026-07-31',
+      })
+      .expect(201)
+    const crossProject = await request(app.getHttpServer())
+      .patch(`/api/v1/workspaces/${workspaceId}/tasks/${unfinished.body.id}`)
+      .set('Cookie', cookie)
+      .set('x-csrf-token', csrf)
+      .send({ iterationId: otherIteration.body.id, version: unfinished.body.version + 1 })
+      .expect(400)
+    expect(crossProject.body.code).toBe('TASK_ITERATION_INVALID')
+
+    const health = await request(app.getHttpServer())
+      .get(`/api/v1/workspaces/${workspaceId}/projects/${project.body.id}/health`)
+      .set('Cookie', cookie)
+      .expect(200)
+    expect(health.body).toMatchObject({
+      totalTasks: 2,
+      completedTasks: 1,
+      completionRate: 50,
+      overdueTasks: 1,
+      openBugs: 1,
+      unassignedTasks: 1,
+      activeIteration: {
+        id: current.body.id,
+        totalTasks: 2,
+        completedTasks: 1,
+        completionRate: 50,
+      },
+    })
+
+    const closed = await request(app.getHttpServer())
+      .post(`${path}/${current.body.id}/close`)
+      .set('Cookie', cookie)
+      .set('x-csrf-token', csrf)
+      .send({ unfinishedAction: 'CARRY_OVER', targetIterationId: next.body.id })
+      .expect(201)
+    expect(closed.body).toMatchObject({ movedTasks: 1, targetIterationId: next.body.id })
+
+    const [closedTasks, carriedTasks] = await Promise.all([
+      request(app.getHttpServer())
+        .get(`${path}/${current.body.id}/tasks`)
+        .set('Cookie', cookie)
+        .expect(200),
+      request(app.getHttpServer())
+        .get(`${path}/${next.body.id}/tasks`)
+        .set('Cookie', cookie)
+        .expect(200),
+    ])
+    expect(closedTasks.body.map((task: { id: string }) => task.id)).toEqual([completed.body.id])
+    expect(carriedTasks.body.map((task: { id: string }) => task.id)).toEqual([unfinished.body.id])
+  })
+  it('exports and restores iteration assignments', async () => {
+    const workspace = await request(app.getHttpServer())
+        .post('/api/v1/workspaces')
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({ name: '迭代备份空间' })
+        .expect(201),
+      project = await request(app.getHttpServer())
+        .post(`/api/v1/workspaces/${workspace.body.id}/projects`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({ name: '备份项目', code: 'BKUP' })
+        .expect(201),
+      columns = await request(app.getHttpServer())
+        .get(`/api/v1/workspaces/${workspace.body.id}/projects/${project.body.id}/columns`)
+        .set('Cookie', cookie)
+        .expect(200),
+      iteration = await request(app.getHttpServer())
+        .post(`/api/v1/workspaces/${workspace.body.id}/projects/${project.body.id}/iterations`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({
+          title: '可恢复迭代',
+          goal: '验证备份关系',
+          startDate: '2026-07-20',
+          endDate: '2026-07-31',
+        })
+        .expect(201)
+    await request(app.getHttpServer())
+      .post(`/api/v1/workspaces/${workspace.body.id}/tasks`)
+      .set('Cookie', cookie)
+      .set('x-csrf-token', csrf)
+      .send({
+        projectId: project.body.id,
+        columnId: columns.body[0].id,
+        iterationId: iteration.body.id,
+        title: '备份中的迭代任务',
+      })
+      .expect(201)
+
+    const exported = await request(app.getHttpServer())
+      .get(`/api/v1/workspaces/${workspace.body.id}/export`)
+      .set('Cookie', cookie)
+      .buffer(true)
+      .parse(binary)
+      .expect(200)
+    const restored = await request(app.getHttpServer())
+      .post('/api/v1/workspaces/import')
+      .set('Cookie', cookie)
+      .set('x-csrf-token', csrf)
+      .attach('file', exported.body, 'iterations.taskharbor.zip')
+      .expect(201)
+    const restoredProjects = await request(app.getHttpServer())
+      .get(`/api/v1/workspaces/${restored.body.id}/projects`)
+      .set('Cookie', cookie)
+      .expect(200)
+    const restoredIterations = await request(app.getHttpServer())
+      .get(
+        `/api/v1/workspaces/${restored.body.id}/projects/${restoredProjects.body[0].id}/iterations`,
+      )
+      .set('Cookie', cookie)
+      .expect(200)
+    expect(restoredIterations.body).toHaveLength(1)
+    const restoredTasks = await request(app.getHttpServer())
+      .get(`/api/v1/workspaces/${restored.body.id}/tasks?projectId=${restoredProjects.body[0].id}`)
+      .set('Cookie', cookie)
+      .expect(200)
+    expect(restoredTasks.body.data[0]).toMatchObject({
+      title: '备份中的迭代任务',
+      iterationId: restoredIterations.body[0].id,
+    })
+  })
 })

@@ -54,12 +54,14 @@ import AuditLogPanel from '@/components/settings/AuditLogPanel'
 
 const DocumentsPage = lazy(() => import('@/pages/DocumentsPage'))
 const PlansPage = lazy(() => import('@/pages/PlansPage'))
+const IterationsPage = lazy(() => import('@/pages/IterationsPage'))
 
 export type Page =
   | 'overview'
   | 'inbox'
   | 'tasks'
   | 'calendar'
+  | 'iterations'
   | 'plans'
   | 'documents'
   | 'archived'
@@ -111,6 +113,9 @@ export default function WorkspacePage({
     [provisioning, setProvisioning] = useState(false),
     [invitations, setInvitations] = useState<Awaited<ReturnType<typeof api.invitations>>>([]),
     [registrationConfig, setRegistrationConfig] = useState<AuthConfig | null>(null)
+  const [projectHealth, setProjectHealth] = useState<Awaited<
+    ReturnType<typeof api.projectHealth>
+  > | null>(null)
   const en = lang === 'en',
     canManage = workspaceRole === 'OWNER' || workspaceRole === 'ADMIN',
     loadMemberData = useCallback(async () => {
@@ -151,6 +156,13 @@ export default function WorkspacePage({
           setNotifications(nextNotifications)
         })
         .catch((reason) => setError(reason.message))
+    if (page === 'overview' && projectId) {
+      setProjectHealth(null)
+      api
+        .projectHealth(workspaceId, projectId)
+        .then(setProjectHealth)
+        .catch((reason) => setError(reason.message))
+    }
   }, [page, workspaceId, projectId, loadMemberData])
   if (page === 'documents')
     return (
@@ -168,6 +180,21 @@ export default function WorkspacePage({
           projects={projects}
           en={en}
           onApplied={onTasksChanged}
+        />
+      </Suspense>
+    )
+  if (page === 'iterations')
+    return (
+      <Suspense
+        fallback={<main className="boot">{en ? 'Loading iterations…' : '正在加载迭代…'}</main>}
+      >
+        <IterationsPage
+          workspaceId={workspaceId}
+          projectId={projectId}
+          projects={projects}
+          en={en}
+          canManage={workspaceRole !== 'VIEWER'}
+          onTasksChanged={onTasksChanged}
         />
       </Suspense>
     )
@@ -248,13 +275,26 @@ export default function WorkspacePage({
         subtitle={en ? 'Progress and risks in the current project' : '当前项目的进度与风险'}
       >
         <div className="metric-grid">
-          <Metric icon={<FolderKanban />} value={projectCount} label={en ? 'Projects' : '项目'} />
+          <Metric
+            icon={<CheckCircle2 />}
+            value={`${projectHealth?.completionRate ?? 0}%`}
+            label={en ? 'Completion' : '整体完成率'}
+          />
           <Metric
             icon={<CircleAlert />}
-            value={tasks.filter((task) => task.kind === 'BUG').length}
-            label={en ? 'Open bugs' : '未归档 Bug'}
+            value={projectHealth?.overdueTasks ?? 0}
+            label={en ? 'Overdue' : '逾期未完成'}
           />
-          <Metric icon={<CheckCircle2 />} value={tasks.length} label={en ? 'Tasks' : '任务总数'} />
+          <Metric
+            icon={<CircleAlert />}
+            value={projectHealth?.openBugs ?? 0}
+            label={en ? 'Open bugs' : '未关闭 Bug'}
+          />
+          <Metric
+            icon={<Users />}
+            value={projectHealth?.unassignedTasks ?? 0}
+            label={en ? 'Unassigned' : '未分配任务'}
+          />
         </div>
         <TaskRows tasks={tasks.slice(0, 6)} empty={en ? 'No tasks yet' : '还没有任务'} en={en} />
       </PageShell>
@@ -778,7 +818,15 @@ function PageShell({
     </section>
   )
 }
-function Metric({ icon, value, label }: { icon: React.ReactNode; value: number; label: string }) {
+function Metric({
+  icon,
+  value,
+  label,
+}: {
+  icon: React.ReactNode
+  value: React.ReactNode
+  label: string
+}) {
   return (
     <Card className="metric">
       <CardHeader>

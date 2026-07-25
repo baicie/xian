@@ -16,6 +16,7 @@ import {
   BellOff,
   ArrowRight,
   CalendarDays,
+  CalendarRange,
   Check,
   ChevronDown,
   Clock3,
@@ -63,6 +64,7 @@ import {
   type TaskWorkbookMapping,
 } from '@/api'
 import { createTaskTypeFields } from '@/models/taskFields'
+import type { Iteration } from '@/models/iteration'
 import AuthScreen from '@/pages/AuthScreen'
 import InviteScreen from '@/pages/InviteScreen'
 import SetupScreen from '@/pages/SetupScreen'
@@ -181,6 +183,7 @@ const copy = {
     inbox: '我的工作',
     myTasks: '我的任务',
     calendar: '日历',
+    iterations: '迭代',
     documents: '设计文档',
     plans: '任务规划',
     project: '项目',
@@ -256,6 +259,7 @@ const copy = {
     inbox: 'My work',
     myTasks: 'My tasks',
     calendar: 'Calendar',
+    iterations: 'Iterations',
     documents: 'Documents',
     plans: 'Planning',
     project: 'Projects',
@@ -330,6 +334,11 @@ const copy = {
   },
 } as const
 type Copy = { [K in keyof typeof copy.zh]: string }
+const statusCopyForTask = {
+  PLANNED: { zh: '未开始', en: 'Planned' },
+  ACTIVE: { zh: '进行中', en: 'Active' },
+  CLOSED: { zh: '已关闭', en: 'Closed' },
+} as const
 
 function UserAvatar({ name, small = false }: { name: string; small?: boolean }) {
   return (
@@ -443,6 +452,10 @@ function AppSidebar({
           <NavLink className={navClassName} to={appPaths.calendar}>
             <CalendarDays data-icon="inline-start" />
             {t.calendar}
+          </NavLink>
+          <NavLink className={navClassName} to={appPaths.iterations}>
+            <CalendarRange data-icon="inline-start" />
+            {t.iterations}
           </NavLink>
           <NavLink className={navClassName} to={appPaths.documents}>
             <FileText data-icon="inline-start" />
@@ -754,7 +767,8 @@ function TaskDialog({
   const [githubReferences, setGithubReferences] = useState<GitHubReference[] | null>(null),
     [githubLinks, setGithubLinks] = useState<GitHubReference[]>([]),
     [initialGithubLinks, setInitialGithubLinks] = useState<GitHubReference[]>([]),
-    [watching, setWatching] = useState(false)
+    [watching, setWatching] = useState(false),
+    [taskIterations, setTaskIterations] = useState<Iteration[]>([])
   useEffect(() => {
     setDraft(task)
     setConfirmingDelete(false)
@@ -783,6 +797,20 @@ function TaskDialog({
           setInitialGithubLinks([])
         }
       })
+    return () => {
+      active = false
+    }
+  }, [task, workspaceId])
+  useEffect(() => {
+    if (!task) {
+      setTaskIterations([])
+      return
+    }
+    let active = true
+    api
+      .iterations(workspaceId, task.projectId)
+      .then((value) => active && setTaskIterations(value))
+      .catch(() => active && setTaskIterations([]))
     return () => {
       active = false
     }
@@ -911,6 +939,39 @@ function TaskDialog({
                     type="date"
                     value={draft.due}
                     onChange={(event) => setDraft({ ...draft, due: event.target.value })}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel>{t.iterations}</FieldLabel>
+                  <ChoiceSelect
+                    label={t.iterations}
+                    value={draft.iterationId ?? 'NONE'}
+                    options={[
+                      {
+                        value: 'NONE',
+                        label: t.taskDetails === '任务详情' ? '待规划' : 'Backlog',
+                      },
+                      ...taskIterations
+                        .filter(
+                          (iteration) =>
+                            iteration.status !== 'CLOSED' || iteration.id === draft.iterationId,
+                        )
+                        .map((iteration) => ({
+                          value: iteration.id,
+                          label: `${iteration.title} · ${
+                            statusCopyForTask[iteration.status][
+                              t.taskDetails === '任务详情' ? 'zh' : 'en'
+                            ]
+                          }`,
+                        })),
+                    ]}
+                    onChange={(iterationId) =>
+                      setDraft({
+                        ...draft,
+                        iterationId: iterationId === 'NONE' ? null : iterationId,
+                      })
+                    }
+                    className="choice-select"
                   />
                 </Field>
               </FieldGroup>
@@ -1728,6 +1789,7 @@ export default function App() {
         id: 'new',
         number: 0,
         projectId: project.id,
+        iterationId: null,
         title: '',
         kind: 'TASK',
         column: column.id,
@@ -1753,6 +1815,7 @@ export default function App() {
         id: 'new',
         number: 0,
         projectId: project.id,
+        iterationId: null,
         title,
         kind: 'TASK',
         column: column.id,

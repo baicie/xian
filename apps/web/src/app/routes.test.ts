@@ -31,6 +31,7 @@ describe('application routes', () => {
       'inbox',
       'overview',
       'calendar',
+      'iterations',
       'plans',
       'documents',
       'archived',

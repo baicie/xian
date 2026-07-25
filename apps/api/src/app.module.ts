@@ -15,6 +15,7 @@ import { TransferController, TransferService } from './modules/transfer.js'
 import { GitHubController, GitHubService } from './modules/github.js'
 import { InvitationController, InvitationService } from './modules/invitations.js'
 import { AssetController, AssetService } from './modules/assets.js'
+import { IterationController, IterationService } from './modules/iterations.js'
 
 @Module({
   controllers: [
@@ -31,6 +32,7 @@ import { AssetController, AssetService } from './modules/assets.js'
     McpController,
     SystemController,
     InvitationController,
+    IterationController,
   ],
   providers: [
     DatabaseService,
@@ -46,6 +48,7 @@ import { AssetController, AssetService } from './modules/assets.js'
     TransferService,
     GitHubService,
     InvitationService,
+    IterationService,
     { provide: APP_GUARD, useClass: SessionGuard },
   ],
 })

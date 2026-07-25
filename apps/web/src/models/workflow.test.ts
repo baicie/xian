@@ -41,6 +41,7 @@ const task = (id: string, column: string, kind: Task['kind'] = 'TASK'): Task => 
   id,
   number: 1,
   projectId: 'project',
+  iterationId: null,
   title: id,
   description: '',
   kind,
