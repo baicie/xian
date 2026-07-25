@@ -24,6 +24,7 @@ import {
   FileText,
   FileUp,
   CircleDot,
+  CircleSlash2,
   ExternalLink,
   GitPullRequest,
   Filter,
@@ -152,6 +153,7 @@ import {
 } from '@/components/ui/breadcrumb'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import TaskComments from '@/components/tasks/TaskComments'
+import TaskDependencies from '@/components/tasks/TaskDependencies'
 import TaskSubtasks from '@/components/tasks/TaskSubtasks'
 import TaskTypeFieldsEditor from '@/components/tasks/TaskTypeFields'
 import TaskWorkflow from '@/components/tasks/TaskWorkflow'
@@ -620,6 +622,19 @@ function TaskCard({
             <Badge variant={task.kind === 'BUG' ? 'destructive' : 'secondary'}>
               {task.kind === 'BUG' ? t.bug : task.kind === 'STORY' ? t.story : t.task}
             </Badge>
+            {task.blockerCount ? (
+              <Badge
+                variant="destructive"
+                title={
+                  t.taskDetails === '任务详情'
+                    ? `${task.blockerCount} 项未完成前置任务`
+                    : `${task.blockerCount} unfinished blockers`
+                }
+              >
+                <CircleSlash2 />
+                {task.blockerCount}
+              </Badge>
+            ) : null}
           </span>
           <span className="task-title">{task.title}</span>
           {task.subtaskTotal ? (
@@ -1031,6 +1046,14 @@ function TaskDialog({
                 en={t.taskDetails !== '任务详情'}
                 onChange={(typeFields) => setDraft({ ...draft, typeFields })}
               />
+              {draft.id !== 'new' ? (
+                <TaskDependencies
+                  workspaceId={workspaceId}
+                  taskId={draft.id}
+                  en={t.taskDetails !== '任务详情'}
+                  onChanged={onSubtasksChanged}
+                />
+              ) : null}
               {githubReferences ? (
                 <Field>
                   <FieldLabel>
@@ -1811,6 +1834,7 @@ export default function App() {
         description: '',
         typeFields: createTaskTypeFields(),
         version: 1,
+        blockerCount: 0,
       })
   }
   const quickCreate = async (event: FormEvent<HTMLFormElement>) => {
@@ -1837,6 +1861,7 @@ export default function App() {
         description: '',
         typeFields: createTaskTypeFields(),
         version: 1,
+        blockerCount: 0,
       })
       setQuickTitle('')
       await reload()
@@ -2549,6 +2574,14 @@ export default function App() {
                                     <List />
                                     {task.subtaskDone}/{task.subtaskTotal}
                                   </small>
+                                ) : null}
+                                {task.blockerCount ? (
+                                  <Badge variant="destructive" className="list-task-blocked">
+                                    <CircleSlash2 />
+                                    {lang === 'zh'
+                                      ? `${task.blockerCount} 项阻塞`
+                                      : `${task.blockerCount} blocked`}
+                                  </Badge>
                                 ) : null}
                               </span>
                               <span>

@@ -7,6 +7,7 @@ import type {
   IterationTaskCandidatePage,
   ProjectHealth,
 } from '@/models/iteration'
+import type { TaskDependencies, TaskDependencyCandidatePage } from '@/models/taskDependency'
 
 export type DocumentKind = 'ARCHITECTURE' | 'REQUIREMENT' | 'DESIGN' | 'MEETING' | 'RETROSPECTIVE'
 export type WorkspaceDocument = {
@@ -163,6 +164,7 @@ type RawTask = {
   priority: 'HIGH' | 'MEDIUM' | 'LOW'
   dueDate: string | null
   version: number
+  blockerCount: number
   subtaskDone: number
   subtaskTotal: number
   assignees: { id: string; name: string }[]
@@ -185,6 +187,7 @@ const mapTask = (task: RawTask): Task => ({
   tags: task.labels,
   typeFields: { ...createTaskTypeFields(), ...task.typeFields },
   version: task.version,
+  blockerCount: task.blockerCount,
   subtaskDone: task.subtaskDone,
   subtaskTotal: task.subtaskTotal,
 })
@@ -549,6 +552,35 @@ export const api = {
   },
   taskTransitions(workspaceId: string, taskId: string) {
     return request<TaskTransitionEvent[]>(`/workspaces/${workspaceId}/tasks/${taskId}/transitions`)
+  },
+  taskDependencies(workspaceId: string, taskId: string) {
+    return request<TaskDependencies>(`/workspaces/${workspaceId}/tasks/${taskId}/dependencies`)
+  },
+  taskDependencyCandidates(
+    workspaceId: string,
+    taskId: string,
+    options: { query?: string; page?: number; pageSize?: number } = {},
+  ) {
+    const query = new URLSearchParams({
+      page: String(options.page ?? 1),
+      pageSize: String(options.pageSize ?? 20),
+    })
+    if (options.query?.trim()) query.set('query', options.query.trim())
+    return request<TaskDependencyCandidatePage>(
+      `/workspaces/${workspaceId}/tasks/${taskId}/dependency-candidates?${query}`,
+    )
+  },
+  addTaskBlocker(workspaceId: string, taskId: string, blockerTaskId: string) {
+    return request<{ ok: true }>(`/workspaces/${workspaceId}/tasks/${taskId}/dependencies`, {
+      method: 'POST',
+      body: JSON.stringify({ blockerTaskId }),
+    })
+  },
+  removeTaskBlocker(workspaceId: string, taskId: string, blockerTaskId: string) {
+    return request<{ ok: true }>(
+      `/workspaces/${workspaceId}/tasks/${taskId}/dependencies/${blockerTaskId}`,
+      { method: 'DELETE' },
+    )
   },
   bulkUpdateTasks(workspaceId: string, taskIds: string[], action: TaskBulkAction) {
     return request<{ updated: number }>(`/workspaces/${workspaceId}/tasks/bulk`, {

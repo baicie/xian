@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { unzipSync, zipSync } from 'fflate'
 import { createHash } from 'node:crypto'
-import { createArchive, readArchive, type WorkspaceSnapshot } from './archive.js'
+import { createArchive, readArchive, snapshotSchema, type WorkspaceSnapshot } from './archive.js'
+import { taskTypeFieldsSchema } from '../common/contracts.js'
 
 const snapshot: WorkspaceSnapshot = {
   schemaVersion: 4,
@@ -9,9 +10,71 @@ const snapshot: WorkspaceSnapshot = {
   members: [],
   projects: [],
   iterations: [],
+  dependencies: [],
   documents: [],
   plans: [],
   assets: [],
+}
+const dependencySnapshot = (dependencies: WorkspaceSnapshot['dependencies']): WorkspaceSnapshot => {
+  const projectSourceId = '00000000-0000-4000-8000-000000000030',
+    columnSourceId = '00000000-0000-4000-8000-000000000033',
+    makeTask = (sourceId: string, number: number, title: string) => ({
+      sourceId,
+      columnSourceId,
+      iterationSourceId: null,
+      number,
+      title,
+      description: '',
+      kind: 'TASK' as const,
+      typeFields: taskTypeFieldsSchema.parse({}),
+      priority: 'MEDIUM' as const,
+      dueDate: null,
+      position: number * 1000,
+      version: 1,
+      archived: false,
+      assigneeEmails: [],
+      labels: [],
+      checklist: [],
+      comments: [],
+    })
+  const taskSourceIds = [
+    ...new Set(
+      dependencies.flatMap((dependency) => [
+        dependency.blockerTaskSourceId,
+        dependency.blockedTaskSourceId,
+      ]),
+    ),
+  ]
+  return {
+    ...snapshot,
+    schemaVersion: 6,
+    projects: [
+      {
+        sourceId: projectSourceId,
+        name: '依赖项目',
+        code: 'DEPS',
+        description: '',
+        color: '#2367d1',
+        archived: false,
+        workflowTemplate: 'SIMPLE',
+        columns: [
+          {
+            sourceId: columnSourceId,
+            key: 'BACKLOG',
+            name: '待处理',
+            color: '#84908b',
+            stateType: 'BACKLOG',
+            position: 1000,
+          },
+        ],
+        transitions: [],
+        tasks: taskSourceIds.map((sourceId, index) =>
+          makeTask(sourceId, index + 1, `依赖任务 ${index + 1}`),
+        ),
+      },
+    ],
+    dependencies,
+  }
 }
 
 describe('闲序 archive', () => {
@@ -157,5 +220,53 @@ describe('闲序 archive', () => {
       ],
     }
     expect(readArchive(createArchive(withIteration)).iterations).toEqual(withIteration.iterations)
+  })
+  it('round-trips task dependency references', () => {
+    const withDependency = dependencySnapshot([
+      {
+        blockerTaskSourceId: '00000000-0000-4000-8000-000000000031',
+        blockedTaskSourceId: '00000000-0000-4000-8000-000000000032',
+      },
+    ])
+    expect(readArchive(createArchive(withDependency)).dependencies).toEqual(
+      withDependency.dependencies,
+    )
+  })
+  it('rejects self, duplicate, and cyclic task dependencies', () => {
+    const first = '00000000-0000-4000-8000-000000000031',
+      second = '00000000-0000-4000-8000-000000000032'
+    expect(() =>
+      createArchive(
+        dependencySnapshot([{ blockerTaskSourceId: first, blockedTaskSourceId: first }]),
+      ),
+    ).toThrow('cannot block itself')
+    expect(() =>
+      createArchive(
+        dependencySnapshot([
+          { blockerTaskSourceId: first, blockedTaskSourceId: second },
+          { blockerTaskSourceId: first, blockedTaskSourceId: second },
+        ]),
+      ),
+    ).toThrow('must be unique')
+    expect(() =>
+      createArchive(
+        dependencySnapshot([
+          { blockerTaskSourceId: first, blockedTaskSourceId: second },
+          { blockerTaskSourceId: second, blockedTaskSourceId: first },
+        ]),
+      ),
+    ).toThrow('cannot contain a cycle')
+  })
+  it('validates long dependency chains without recursive graph traversal', () => {
+    const taskIds = Array.from(
+        { length: 6000 },
+        (_, index) => `00000000-0000-4000-8000-${String(index + 100).padStart(12, '0')}`,
+      ),
+      dependencies = taskIds.slice(1).map((blockedTaskSourceId, index) => ({
+        blockerTaskSourceId: taskIds[index]!,
+        blockedTaskSourceId,
+      }))
+
+    expect(() => snapshotSchema.parse(dependencySnapshot(dependencies))).not.toThrow()
   })
 })

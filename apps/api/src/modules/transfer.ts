@@ -50,6 +50,7 @@ export class TransferService {
       transitions,
       iterations,
       tasks,
+      dependencies,
       assignees,
       labels,
       checks,
@@ -73,6 +74,8 @@ export class TransferService {
       this.db
         .client`SELECT id AS "sourceId",project_id AS "projectSourceId",column_id AS "columnSourceId",iteration_id AS "iterationSourceId",number,title,description,kind,type_fields AS "typeFields",priority,due_date AS "dueDate",position,version,archived_at IS NOT NULL AS archived FROM tasks WHERE workspace_id=${workspaceId} AND deleted_at IS NULL ORDER BY project_id,number`,
       this.db
+        .client`SELECT blocker_task_id AS "blockerTaskSourceId",blocked_task_id AS "blockedTaskSourceId" FROM task_dependencies WHERE workspace_id=${workspaceId} AND blocker_task_id IN (SELECT id FROM tasks WHERE workspace_id=${workspaceId} AND deleted_at IS NULL) AND blocked_task_id IN (SELECT id FROM tasks WHERE workspace_id=${workspaceId} AND deleted_at IS NULL) ORDER BY created_at`,
+      this.db
         .client`SELECT ta.task_id AS "taskSourceId",u.email FROM task_assignees ta JOIN users u ON u.id=ta.user_id WHERE ta.workspace_id=${workspaceId}`,
       this.db
         .client`SELECT tl.task_id AS "taskSourceId",l.name FROM task_labels tl JOIN labels l ON l.id=tl.label_id WHERE tl.workspace_id=${workspaceId}`,
@@ -91,6 +94,7 @@ export class TransferService {
       this.db
         .client`SELECT id AS "sourceId",original_name AS "originalName",content_type AS "contentType",size_bytes AS "sizeBytes",sha256,storage_key AS "storageKey" FROM assets WHERE workspace_id=${workspaceId} ORDER BY created_at`,
     ])) as [
+      ExportRow[],
       ExportRow[],
       ExportRow[],
       ExportRow[],
@@ -134,7 +138,7 @@ export class TransferService {
         })),
     }))
     return {
-      schemaVersion: 5,
+      schemaVersion: 6,
       workspace: { name: workspace!.name },
       members: members as WorkspaceSnapshot['members'],
       projects: projects.map((project) => ({
@@ -159,6 +163,7 @@ export class TransferService {
         ...iteration,
         closedAt: iteration.closedAt ? iso(iteration.closedAt) : null,
       })) as WorkspaceSnapshot['iterations'],
+      dependencies: dependencies as WorkspaceSnapshot['dependencies'],
       documents: documents.map((document) => ({
         ...document,
         versions: versions
@@ -345,6 +350,24 @@ export class TransferService {
             }
           }
           await sql`UPDATE projects SET next_task_number=${Math.max(0, ...project.tasks.map((task) => task.number)) + 1} WHERE id=${created!.id}`
+        }
+        for (const dependency of snapshot.dependencies) {
+          const blockerTaskId = taskIds.get(dependency.blockerTaskSourceId),
+            blockedTaskId = taskIds.get(dependency.blockedTaskSourceId)
+          if (!blockerTaskId || !blockedTaskId)
+            throw new BadRequestException({
+              code: 'BACKUP_DEPENDENCY_INVALID',
+              message: '备份中的任务依赖引用了不存在的任务',
+            })
+          const [scope] = await sql<
+            { projectId: string }[]
+          >`SELECT blocked.project_id AS "projectId" FROM tasks blocker JOIN tasks blocked ON blocked.id=${blockedTaskId} WHERE blocker.id=${blockerTaskId} AND blocker.project_id=blocked.project_id`
+          if (!scope)
+            throw new BadRequestException({
+              code: 'BACKUP_DEPENDENCY_INVALID',
+              message: '备份中的任务依赖跨越了项目边界',
+            })
+          await sql`INSERT INTO task_dependencies(workspace_id,project_id,blocker_task_id,blocked_task_id,created_by) VALUES(${workspace!.id},${scope.projectId},${blockerTaskId},${blockedTaskId},${userId})`
         }
         for (const document of snapshot.documents) {
           const [next] = await sql<

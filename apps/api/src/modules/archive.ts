@@ -82,6 +82,10 @@ const iteration = z.object({
   version: z.number().int(),
   closedAt: z.string().nullable(),
 })
+const dependency = z.object({
+  blockerTaskSourceId: z.string().uuid(),
+  blockedTaskSourceId: z.string().uuid(),
+})
 const documentVersion = z.object({
   version: z.number().int(),
   title: z.string(),
@@ -126,15 +130,84 @@ const asset = z.object({
   sizeBytes: z.number().int().positive(),
   sha256: z.string().length(64),
 })
-export const snapshotSchema = z.object({
-  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
+const snapshotFieldsSchema = z.object({
+  schemaVersion: z.union([
+    z.literal(1),
+    z.literal(2),
+    z.literal(3),
+    z.literal(4),
+    z.literal(5),
+    z.literal(6),
+  ]),
   workspace: z.object({ name: z.string() }),
   members: z.array(member),
   projects: z.array(project),
   iterations: z.array(iteration).default([]),
+  dependencies: z.array(dependency).default([]),
   documents: z.array(document),
   plans: z.array(plan),
   assets: z.array(asset).default([]),
+})
+export const snapshotSchema = snapshotFieldsSchema.superRefine((snapshot, context) => {
+  const taskProjects = new Map<string, string>()
+  for (const project of snapshot.projects)
+    for (const task of project.tasks) taskProjects.set(task.sourceId, project.sourceId)
+
+  const adjacency = new Map<string, string[]>(),
+    inDegree = new Map<string, number>(),
+    edges = new Set<string>()
+  for (const [index, dependency] of snapshot.dependencies.entries()) {
+    const blockerProject = taskProjects.get(dependency.blockerTaskSourceId),
+      blockedProject = taskProjects.get(dependency.blockedTaskSourceId),
+      path = ['dependencies', index]
+    if (dependency.blockerTaskSourceId === dependency.blockedTaskSourceId) {
+      context.addIssue({ code: 'custom', path, message: 'A task cannot block itself' })
+      continue
+    }
+    if (!blockerProject || !blockedProject || blockerProject !== blockedProject) {
+      context.addIssue({
+        code: 'custom',
+        path,
+        message: 'Task dependencies must reference tasks in the same project',
+      })
+      continue
+    }
+    const edge = `${dependency.blockerTaskSourceId}:${dependency.blockedTaskSourceId}`
+    if (edges.has(edge)) {
+      context.addIssue({ code: 'custom', path, message: 'Task dependencies must be unique' })
+      continue
+    }
+    edges.add(edge)
+    const dependents = adjacency.get(dependency.blockerTaskSourceId)
+    if (dependents) dependents.push(dependency.blockedTaskSourceId)
+    else adjacency.set(dependency.blockerTaskSourceId, [dependency.blockedTaskSourceId])
+    if (!inDegree.has(dependency.blockerTaskSourceId))
+      inDegree.set(dependency.blockerTaskSourceId, 0)
+    inDegree.set(
+      dependency.blockedTaskSourceId,
+      (inDegree.get(dependency.blockedTaskSourceId) ?? 0) + 1,
+    )
+  }
+
+  const queue = [...inDegree.entries()]
+    .filter(([, degree]) => degree === 0)
+    .map(([taskId]) => taskId)
+  let processed = 0
+  for (let index = 0; index < queue.length; index++) {
+    const taskId = queue[index]!
+    processed++
+    for (const dependentId of adjacency.get(taskId) ?? []) {
+      const degree = inDegree.get(dependentId)! - 1
+      inDegree.set(dependentId, degree)
+      if (degree === 0) queue.push(dependentId)
+    }
+  }
+  if (processed !== inDegree.size)
+    context.addIssue({
+      code: 'custom',
+      path: ['dependencies'],
+      message: 'Task dependencies cannot contain a cycle',
+    })
 })
 export type WorkspaceSnapshot = z.infer<typeof snapshotSchema>
 

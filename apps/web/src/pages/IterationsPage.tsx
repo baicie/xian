@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleAlert,
+  CircleSlash2,
   ListChecks,
   PencilLine,
   Play,
@@ -724,6 +725,11 @@ function HealthBand({
       value: health?.unassignedTasks ?? 0,
       label: en ? 'Unassigned' : '未分配任务',
     },
+    {
+      icon: <CircleSlash2 />,
+      value: health?.blockedTasks ?? 0,
+      label: en ? 'Blocked' : '阻塞任务',
+    },
   ]
   return (
     <section className="iteration-health" aria-label={en ? 'Project health' : '项目健康'}>
@@ -745,7 +751,7 @@ function HealthBand({
           </ProgressLabel>
           <span className="active-iteration-progress-value">
             {health?.activeIteration
-              ? `${health.activeIteration.completedTasks}/${health.activeIteration.totalTasks}`
+              ? `${health.activeIteration.completedTasks}/${health.activeIteration.totalTasks} · ${health.activeIteration.blockedTasks} ${en ? 'blocked' : '阻塞'}`
               : '0/0'}
           </span>
         </Progress>
@@ -800,6 +806,12 @@ function IterationTaskTable({
                 <small>#{task.number}</small>
                 <strong>{task.title}</strong>
                 <Badge variant="secondary">{task.kind}</Badge>
+                {task.blockerCount ? (
+                  <Badge variant="destructive">
+                    <CircleSlash2 />
+                    {en ? `${task.blockerCount} blocked` : `${task.blockerCount} 项阻塞`}
+                  </Badge>
+                ) : null}
               </span>
             </TableCell>
             <TableCell data-label={en ? 'Status' : '状态'}>{task.columnName}</TableCell>

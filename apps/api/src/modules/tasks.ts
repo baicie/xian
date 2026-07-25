@@ -23,6 +23,7 @@ import { DatabaseService } from '../database/database.service.js'
 import {
   commentSchema,
   taskBulkSchema,
+  taskDependencyCreateSchema,
   taskPatchSchema,
   taskSchema,
   taskTransitionSchema,
@@ -41,6 +42,11 @@ const listSchema = z.object({
   archived: z.preprocess((value) => value === 'true', z.boolean()).default(false),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(50),
+})
+const dependencyCandidateQuerySchema = z.object({
+  query: z.string().trim().max(200).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(50).default(20),
 })
 const workbookMappingSchema = z
   .object({
@@ -145,6 +151,99 @@ export class TaskService {
     await sql`INSERT INTO task_transition_events(workspace_id,task_id,actor_id,from_column_id,to_column_id,action_name,comment) VALUES(${workspaceId},${taskId},${userId},${fromColumnId},${toColumnId},${actionName},${comment})`
     await sql`INSERT INTO activities(workspace_id,task_id,actor_id,action,data) VALUES(${workspaceId},${taskId},${userId},'task.transitioned',${JSON.stringify({ fromColumnId, toColumnId, actionName, comment })}::jsonb)`
   }
+  private async notifyTaskStakeholders(
+    sql: Sql | TransactionSql,
+    workspaceId: string,
+    actorId: string,
+    taskId: string,
+    title: string,
+    body: string,
+    action: string,
+  ) {
+    const recipients = await sql<
+      { userId: string }[]
+    >`SELECT user_id AS "userId" FROM task_watchers WHERE task_id=${taskId} UNION SELECT user_id AS "userId" FROM task_assignees WHERE task_id=${taskId}`
+    for (const recipient of recipients)
+      if (recipient.userId !== actorId)
+        await sql`INSERT INTO notifications(workspace_id,user_id,task_id,actor_id,title,body,action) VALUES(${workspaceId},${recipient.userId},${taskId},${actorId},${title},${body},${action})`
+  }
+  private async notifyDependentsOfBlocker(
+    sql: Sql | TransactionSql,
+    workspaceId: string,
+    actorId: string,
+    blockerTaskId: string,
+    event: 'COMPLETED' | 'REOPENED' | 'ARCHIVED' | 'RESTORED' | 'DELETED',
+  ) {
+    const [blocker] = await sql<
+      { title: string; key: string; done: boolean }[]
+    >`SELECT t.title,p.code || '-' || t.number AS key,c.state_type='DONE' AS done FROM tasks t JOIN projects p ON p.id=t.project_id JOIN board_columns c ON c.id=t.column_id WHERE t.id=${blockerTaskId} AND t.workspace_id=${workspaceId}`
+    if (
+      !blocker ||
+      ((event === 'ARCHIVED' || event === 'RESTORED' || event === 'DELETED') && blocker.done)
+    )
+      return
+    const dependents = await sql<
+      { id: string; title: string }[]
+    >`SELECT t.id,t.title FROM task_dependencies d JOIN tasks t ON t.id=d.blocked_task_id JOIN board_columns c ON c.id=t.column_id WHERE d.workspace_id=${workspaceId} AND d.blocker_task_id=${blockerTaskId} AND t.deleted_at IS NULL AND t.archived_at IS NULL AND c.state_type<>'DONE'`
+    const copy = {
+      COMPLETED: {
+        title: '前置任务已完成',
+        body: `${blocker.key} ${blocker.title} 已完成，请检查剩余阻塞项`,
+        action: 'task.blocker_resolved',
+      },
+      REOPENED: {
+        title: '任务再次被阻塞',
+        body: `${blocker.key} ${blocker.title} 已重新打开`,
+        action: 'task.blocked',
+      },
+      ARCHIVED: {
+        title: '前置任务已归档',
+        body: `${blocker.key} ${blocker.title} 已归档，不再计入当前阻塞`,
+        action: 'task.blocker_resolved',
+      },
+      RESTORED: {
+        title: '任务再次被阻塞',
+        body: `${blocker.key} ${blocker.title} 已恢复为有效前置任务`,
+        action: 'task.blocked',
+      },
+      DELETED: {
+        title: '前置任务已删除',
+        body: `${blocker.key} ${blocker.title} 已删除，不再计入当前阻塞`,
+        action: 'task.blocker_resolved',
+      },
+    }[event]
+    for (const dependent of dependents)
+      await this.notifyTaskStakeholders(
+        sql,
+        workspaceId,
+        actorId,
+        dependent.id,
+        `${copy.title}：${dependent.title}`,
+        copy.body,
+        copy.action,
+      )
+  }
+  private async notifyDependencyStateChange(
+    sql: Sql | TransactionSql,
+    workspaceId: string,
+    actorId: string,
+    blockerTaskId: string,
+    fromColumnId: string,
+    toColumnId: string,
+  ) {
+    if (fromColumnId === toColumnId) return
+    const [state] = await sql<
+      { wasDone: boolean; isDone: boolean }[]
+    >`SELECT source.state_type='DONE' AS "wasDone",target.state_type='DONE' AS "isDone" FROM board_columns source CROSS JOIN board_columns target WHERE source.id=${fromColumnId} AND target.id=${toColumnId}`
+    if (!state || state.wasDone === state.isDone) return
+    await this.notifyDependentsOfBlocker(
+      sql,
+      workspaceId,
+      actorId,
+      blockerTaskId,
+      state.isDone ? 'COMPLETED' : 'REOPENED',
+    )
+  }
   async list(workspaceId: string, userId: string, raw: unknown) {
     await this.workspaces.role(workspaceId, userId, 'task.read')
     const q = parse(listSchema, raw),
@@ -154,7 +253,7 @@ export class TaskService {
       priority = q.priority ?? null,
       kind = q.kind ?? null
     const data = await this.db
-      .client`SELECT t.id,t.number,t.kind,t.title,t.description,t.type_fields AS "typeFields",t.priority,t.due_date AS "dueDate",t.position,t.version,t.project_id AS "projectId",t.column_id AS "columnId",t.iteration_id AS "iterationId",p.code,c.name AS "columnName",(SELECT count(*)::int FROM checklist_items ci WHERE ci.task_id=t.id) AS "subtaskTotal",(SELECT count(*)::int FROM checklist_items ci WHERE ci.task_id=t.id AND ci.is_done) AS "subtaskDone",coalesce(json_agg(json_build_object('id',u.id,'name',u.name)) FILTER(WHERE u.id IS NOT NULL),'[]') AS assignees,coalesce((SELECT json_agg(l.name ORDER BY l.name) FROM task_labels tl JOIN labels l ON l.id=tl.label_id WHERE tl.task_id=t.id),'[]') AS labels FROM tasks t JOIN projects p ON p.id=t.project_id JOIN board_columns c ON c.id=t.column_id LEFT JOIN task_assignees ta ON ta.task_id=t.id LEFT JOIN users u ON u.id=ta.user_id WHERE t.workspace_id=${workspaceId} AND t.deleted_at IS NULL AND ((${q.archived}=true AND t.archived_at IS NOT NULL) OR (${q.archived}=false AND t.archived_at IS NULL)) AND (${project}::uuid IS NULL OR t.project_id=${project}) AND (${needle}::text IS NULL OR t.title ILIKE ${needle}) AND (${priority}::task_priority IS NULL OR t.priority=${priority}) AND (${kind}::task_kind IS NULL OR t.kind=${kind}) AND (${q.mine}=false OR EXISTS(SELECT 1 FROM task_assignees mine_ta WHERE mine_ta.task_id=t.id AND mine_ta.user_id=${userId}) OR EXISTS(SELECT 1 FROM task_watchers mine_tw WHERE mine_tw.task_id=t.id AND mine_tw.user_id=${userId})) GROUP BY t.id,p.code,c.name,c.position ORDER BY c.position,t.position LIMIT ${q.pageSize} OFFSET ${offset}`
+      .client`SELECT t.id,t.number,t.kind,t.title,t.description,t.type_fields AS "typeFields",t.priority,t.due_date AS "dueDate",t.position,t.version,t.project_id AS "projectId",t.column_id AS "columnId",t.iteration_id AS "iterationId",CASE WHEN c.state_type='DONE' THEN 0 ELSE (SELECT count(*)::int FROM task_dependencies d JOIN tasks blocker ON blocker.id=d.blocker_task_id JOIN board_columns blocker_column ON blocker_column.id=blocker.column_id WHERE d.blocked_task_id=t.id AND blocker.deleted_at IS NULL AND blocker.archived_at IS NULL AND blocker_column.state_type<>'DONE') END AS "blockerCount",p.code,c.name AS "columnName",(SELECT count(*)::int FROM checklist_items ci WHERE ci.task_id=t.id) AS "subtaskTotal",(SELECT count(*)::int FROM checklist_items ci WHERE ci.task_id=t.id AND ci.is_done) AS "subtaskDone",coalesce(json_agg(json_build_object('id',u.id,'name',u.name)) FILTER(WHERE u.id IS NOT NULL),'[]') AS assignees,coalesce((SELECT json_agg(l.name ORDER BY l.name) FROM task_labels tl JOIN labels l ON l.id=tl.label_id WHERE tl.task_id=t.id),'[]') AS labels FROM tasks t JOIN projects p ON p.id=t.project_id JOIN board_columns c ON c.id=t.column_id LEFT JOIN task_assignees ta ON ta.task_id=t.id LEFT JOIN users u ON u.id=ta.user_id WHERE t.workspace_id=${workspaceId} AND t.deleted_at IS NULL AND ((${q.archived}=true AND t.archived_at IS NOT NULL) OR (${q.archived}=false AND t.archived_at IS NULL)) AND (${project}::uuid IS NULL OR t.project_id=${project}) AND (${needle}::text IS NULL OR t.title ILIKE ${needle}) AND (${priority}::task_priority IS NULL OR t.priority=${priority}) AND (${kind}::task_kind IS NULL OR t.kind=${kind}) AND (${q.mine}=false OR EXISTS(SELECT 1 FROM task_assignees mine_ta WHERE mine_ta.task_id=t.id AND mine_ta.user_id=${userId}) OR EXISTS(SELECT 1 FROM task_watchers mine_tw WHERE mine_tw.task_id=t.id AND mine_tw.user_id=${userId})) GROUP BY t.id,p.code,c.name,c.state_type,c.position ORDER BY c.position,t.position LIMIT ${q.pageSize} OFFSET ${offset}`
     const countRows = await this.db.client<
       { count: number }[]
     >`SELECT count(*)::int AS count FROM tasks t WHERE workspace_id=${workspaceId} AND deleted_at IS NULL AND ((${q.archived}=true AND archived_at IS NOT NULL) OR (${q.archived}=false AND archived_at IS NULL)) AND (${project}::uuid IS NULL OR project_id=${project}) AND (${kind}::task_kind IS NULL OR kind=${kind}) AND (${q.mine}=false OR EXISTS(SELECT 1 FROM task_assignees mine_ta WHERE mine_ta.task_id=t.id AND mine_ta.user_id=${userId}) OR EXISTS(SELECT 1 FROM task_watchers mine_tw WHERE mine_tw.task_id=t.id AND mine_tw.user_id=${userId}))`
@@ -168,6 +267,182 @@ export class TaskService {
         totalPages: Math.ceil(count / q.pageSize),
       },
     }
+  }
+  async dependencies(workspaceId: string, userId: string, taskId: string) {
+    await this.workspaces.role(workspaceId, userId, 'task.read')
+    const [task] = await this.db.client<
+      { done: boolean }[]
+    >`SELECT c.state_type='DONE' AS done FROM tasks t JOIN board_columns c ON c.id=t.column_id WHERE t.id=${taskId} AND t.workspace_id=${workspaceId} AND t.deleted_at IS NULL`
+    if (!task) throw new NotFoundException({ code: 'TASK_NOT_FOUND', message: '任务不存在' })
+    const [blockers, dependents] = await Promise.all([
+      this.db.client<
+        {
+          id: string
+          number: number
+          code: string
+          title: string
+          kind: 'TASK' | 'STORY' | 'BUG'
+          stateType: 'BACKLOG' | 'ACTIVE' | 'REVIEW' | 'DONE'
+          archived: boolean
+          blockerCount: number
+        }[]
+      >`SELECT t.id,t.number,p.code,t.title,t.kind,c.state_type AS "stateType",t.archived_at IS NOT NULL AS archived,CASE WHEN t.archived_at IS NULL AND c.state_type<>'DONE' THEN 1 ELSE 0 END::int AS "blockerCount" FROM task_dependencies d JOIN tasks t ON t.id=d.blocker_task_id JOIN projects p ON p.id=t.project_id JOIN board_columns c ON c.id=t.column_id WHERE d.workspace_id=${workspaceId} AND d.blocked_task_id=${taskId} AND t.deleted_at IS NULL ORDER BY d.created_at,t.number`,
+      this.db.client<
+        {
+          id: string
+          number: number
+          code: string
+          title: string
+          kind: 'TASK' | 'STORY' | 'BUG'
+          stateType: 'BACKLOG' | 'ACTIVE' | 'REVIEW' | 'DONE'
+          archived: boolean
+          blockerCount: number
+        }[]
+      >`SELECT t.id,t.number,p.code,t.title,t.kind,c.state_type AS "stateType",t.archived_at IS NOT NULL AS archived,CASE WHEN c.state_type='DONE' THEN 0 ELSE (SELECT count(*)::int FROM task_dependencies active_dependency JOIN tasks active_blocker ON active_blocker.id=active_dependency.blocker_task_id JOIN board_columns active_column ON active_column.id=active_blocker.column_id WHERE active_dependency.blocked_task_id=t.id AND active_blocker.deleted_at IS NULL AND active_blocker.archived_at IS NULL AND active_column.state_type<>'DONE') END AS "blockerCount" FROM task_dependencies d JOIN tasks t ON t.id=d.blocked_task_id JOIN projects p ON p.id=t.project_id JOIN board_columns c ON c.id=t.column_id WHERE d.workspace_id=${workspaceId} AND d.blocker_task_id=${taskId} AND t.deleted_at IS NULL ORDER BY d.created_at,t.number`,
+    ])
+    const effectiveBlockers = task.done
+        ? blockers.map((blocker) => ({ ...blocker, blockerCount: 0 }))
+        : blockers,
+      blockerCount = effectiveBlockers.reduce((total, blocker) => total + blocker.blockerCount, 0)
+    return { blocked: blockerCount > 0, blockerCount, blockers: effectiveBlockers, dependents }
+  }
+  async dependencyCandidates(workspaceId: string, userId: string, taskId: string, raw: unknown) {
+    await this.workspaces.role(workspaceId, userId, 'task.read')
+    const query = parse(dependencyCandidateQuerySchema, raw),
+      [task] = await this.db.client<
+        { projectId: string }[]
+      >`SELECT project_id AS "projectId" FROM tasks WHERE id=${taskId} AND workspace_id=${workspaceId} AND deleted_at IS NULL AND archived_at IS NULL`
+    if (!task) throw new NotFoundException({ code: 'TASK_NOT_FOUND', message: '任务不存在' })
+    const needle = query.query ? `%${query.query}%` : null,
+      offset = (query.page - 1) * query.pageSize
+    const [rows, countRows] = await Promise.all([
+      this.db.client<
+        {
+          id: string
+          number: number
+          code: string
+          title: string
+          kind: 'TASK' | 'STORY' | 'BUG'
+          stateType: 'BACKLOG' | 'ACTIVE' | 'REVIEW' | 'DONE'
+        }[]
+      >`WITH RECURSIVE descendants(id) AS (SELECT blocked_task_id FROM task_dependencies WHERE blocker_task_id=${taskId} UNION SELECT dependency.blocked_task_id FROM task_dependencies dependency JOIN descendants ON dependency.blocker_task_id=descendants.id) SELECT candidate.id,candidate.number,p.code,candidate.title,candidate.kind,c.state_type AS "stateType" FROM tasks candidate JOIN projects p ON p.id=candidate.project_id JOIN board_columns c ON c.id=candidate.column_id WHERE candidate.workspace_id=${workspaceId} AND candidate.project_id=${task.projectId} AND candidate.id<>${taskId} AND candidate.deleted_at IS NULL AND candidate.archived_at IS NULL AND (${needle}::text IS NULL OR candidate.title ILIKE ${needle} OR p.code || '-' || candidate.number::text ILIKE ${needle}) AND NOT EXISTS(SELECT 1 FROM task_dependencies existing WHERE existing.blocked_task_id=${taskId} AND existing.blocker_task_id=candidate.id) AND NOT EXISTS(SELECT 1 FROM descendants WHERE descendants.id=candidate.id) ORDER BY c.position,candidate.position LIMIT ${query.pageSize} OFFSET ${offset}`,
+      this.db.client<
+        { count: number }[]
+      >`WITH RECURSIVE descendants(id) AS (SELECT blocked_task_id FROM task_dependencies WHERE blocker_task_id=${taskId} UNION SELECT dependency.blocked_task_id FROM task_dependencies dependency JOIN descendants ON dependency.blocker_task_id=descendants.id) SELECT count(*)::int AS count FROM tasks candidate JOIN projects p ON p.id=candidate.project_id WHERE candidate.workspace_id=${workspaceId} AND candidate.project_id=${task.projectId} AND candidate.id<>${taskId} AND candidate.deleted_at IS NULL AND candidate.archived_at IS NULL AND (${needle}::text IS NULL OR candidate.title ILIKE ${needle} OR p.code || '-' || candidate.number::text ILIKE ${needle}) AND NOT EXISTS(SELECT 1 FROM task_dependencies existing WHERE existing.blocked_task_id=${taskId} AND existing.blocker_task_id=candidate.id) AND NOT EXISTS(SELECT 1 FROM descendants WHERE descendants.id=candidate.id)`,
+    ])
+    const totalItems = countRows[0]?.count ?? 0
+    return {
+      data: rows,
+      pagination: {
+        page: query.page,
+        pageSize: query.pageSize,
+        totalItems,
+        totalPages: Math.ceil(totalItems / query.pageSize),
+      },
+    }
+  }
+  async addBlocker(
+    workspaceId: string,
+    userId: string,
+    blockedTaskId: string,
+    blockerTaskId: string,
+  ) {
+    await this.workspaces.role(workspaceId, userId, 'task.update')
+    if (blockedTaskId === blockerTaskId)
+      throw new BadRequestException({
+        code: 'TASK_DEPENDENCY_SELF',
+        message: '任务不能阻塞自身',
+      })
+    return this.db.client.begin(async (sql) => {
+      const [scope] = await sql<
+        { projectId: string }[]
+      >`SELECT project_id AS "projectId",title FROM tasks WHERE id=${blockedTaskId} AND workspace_id=${workspaceId} AND deleted_at IS NULL AND archived_at IS NULL`
+      if (!scope)
+        throw new NotFoundException({ code: 'TASK_NOT_FOUND', message: '当前任务不存在或已归档' })
+      const [project] =
+        await sql`SELECT id FROM projects WHERE id=${scope.projectId} AND workspace_id=${workspaceId} AND deleted_at IS NULL FOR UPDATE`
+      if (!project)
+        throw new NotFoundException({ code: 'PROJECT_NOT_FOUND', message: '项目不存在' })
+      const [blocked] = await sql<
+        { projectId: string; title: string; done: boolean }[]
+      >`SELECT t.project_id AS "projectId",t.title,c.state_type='DONE' AS done FROM tasks t JOIN board_columns c ON c.id=t.column_id WHERE t.id=${blockedTaskId} AND t.workspace_id=${workspaceId} AND t.deleted_at IS NULL AND t.archived_at IS NULL FOR UPDATE OF t`
+      if (!blocked)
+        throw new NotFoundException({ code: 'TASK_NOT_FOUND', message: '当前任务不存在或已归档' })
+      const [blocker] = await sql<
+        { projectId: string; title: string; key: string; done: boolean }[]
+      >`SELECT t.project_id AS "projectId",t.title,p.code || '-' || t.number AS key,c.state_type='DONE' AS done FROM tasks t JOIN projects p ON p.id=t.project_id JOIN board_columns c ON c.id=t.column_id WHERE t.id=${blockerTaskId} AND t.workspace_id=${workspaceId} AND t.deleted_at IS NULL AND t.archived_at IS NULL FOR UPDATE OF t`
+      if (!blocker)
+        throw new BadRequestException({
+          code: 'TASK_DEPENDENCY_TASK_INVALID',
+          message: '前置任务不存在或已归档',
+        })
+      if (blocker.projectId !== blocked.projectId)
+        throw new BadRequestException({
+          code: 'TASK_DEPENDENCY_SCOPE',
+          message: '只能关联同一项目中的任务',
+        })
+      const [existing] =
+        await sql`SELECT 1 FROM task_dependencies WHERE blocker_task_id=${blockerTaskId} AND blocked_task_id=${blockedTaskId}`
+      if (existing)
+        throw new ConflictException({
+          code: 'TASK_DEPENDENCY_EXISTS',
+          message: '该前置任务已经存在',
+        })
+      const [cycle] =
+        await sql`WITH RECURSIVE reachable(id) AS (SELECT blocked_task_id FROM task_dependencies WHERE blocker_task_id=${blockedTaskId} UNION SELECT dependency.blocked_task_id FROM task_dependencies dependency JOIN reachable ON dependency.blocker_task_id=reachable.id) SELECT 1 FROM reachable WHERE id=${blockerTaskId} LIMIT 1`
+      if (cycle)
+        throw new ConflictException({
+          code: 'TASK_DEPENDENCY_CYCLE',
+          message: '该关联会形成循环依赖',
+        })
+      await sql`INSERT INTO task_dependencies(workspace_id,project_id,blocker_task_id,blocked_task_id,created_by) VALUES(${workspaceId},${blocked.projectId},${blockerTaskId},${blockedTaskId},${userId})`
+      await sql`INSERT INTO activities(workspace_id,task_id,actor_id,action,data) VALUES(${workspaceId},${blockedTaskId},${userId},'task.dependency_added',${JSON.stringify({ blockerTaskId })}::jsonb)`
+      const activelyBlocked = !blocked.done && !blocker.done
+      await this.notifyTaskStakeholders(
+        sql,
+        workspaceId,
+        userId,
+        blockedTaskId,
+        `${activelyBlocked ? '任务被阻塞' : '新增前置任务'}：${blocked.title}`,
+        `${blocker.key} ${blocker.title}${activelyBlocked ? ' 完成前，该任务处于阻塞状态' : ' 当前不构成有效阻塞'}`,
+        activelyBlocked ? 'task.blocked' : 'task.dependency_created',
+      )
+      return { ok: true }
+    })
+  }
+  async removeBlocker(
+    workspaceId: string,
+    userId: string,
+    blockedTaskId: string,
+    blockerTaskId: string,
+  ) {
+    await this.workspaces.role(workspaceId, userId, 'task.update')
+    return this.db.client.begin(async (sql) => {
+      const [blocked] = await sql<
+        { projectId: string; title: string }[]
+      >`SELECT project_id AS "projectId",title FROM tasks WHERE id=${blockedTaskId} AND workspace_id=${workspaceId} AND deleted_at IS NULL`
+      if (!blocked) throw new NotFoundException({ code: 'TASK_NOT_FOUND', message: '任务不存在' })
+      await sql`SELECT id FROM projects WHERE id=${blocked.projectId} AND workspace_id=${workspaceId} FOR UPDATE`
+      const [removed] = await sql<
+        { title: string; key: string }[]
+      >`DELETE FROM task_dependencies dependency USING tasks blocker,projects project WHERE dependency.blocker_task_id=${blockerTaskId} AND dependency.blocked_task_id=${blockedTaskId} AND blocker.id=dependency.blocker_task_id AND project.id=blocker.project_id RETURNING blocker.title,project.code || '-' || blocker.number AS key`
+      if (!removed)
+        throw new NotFoundException({
+          code: 'TASK_DEPENDENCY_NOT_FOUND',
+          message: '前置任务关联不存在',
+        })
+      await sql`INSERT INTO activities(workspace_id,task_id,actor_id,action,data) VALUES(${workspaceId},${blockedTaskId},${userId},'task.dependency_removed',${JSON.stringify({ blockerTaskId })}::jsonb)`
+      await this.notifyTaskStakeholders(
+        sql,
+        workspaceId,
+        userId,
+        blockedTaskId,
+        `已解除任务阻塞：${blocked.title}`,
+        `${removed.key} ${removed.title} 不再是前置任务`,
+        'task.blocker_resolved',
+      )
+      return { ok: true }
+    })
   }
   async create(workspaceId: string, userId: string, input: ReturnType<typeof taskSchema.parse>) {
     await this.workspaces.role(workspaceId, userId, 'task.create')
@@ -437,6 +712,15 @@ export class TaskService {
           transition.actionName,
           null,
         )
+      if (input.columnId)
+        await this.notifyDependencyStateChange(
+          sql,
+          workspaceId,
+          userId,
+          id,
+          before.column_id,
+          input.columnId,
+        )
       await sql`INSERT INTO activities(workspace_id,task_id,actor_id,action,data) VALUES(${workspaceId},${id},${userId},'task.updated',${JSON.stringify({ fromColumn: before.column_id, toColumn: input.columnId })}::jsonb)`
       return task
     })
@@ -486,6 +770,14 @@ export class TaskService {
         input.toColumnId,
         transition.actionName,
         transition.comment,
+      )
+      await this.notifyDependencyStateChange(
+        sql,
+        workspaceId,
+        userId,
+        id,
+        task.columnId,
+        input.toColumnId,
       )
       const recipients = await sql<
         { userId: string }[]
@@ -566,17 +858,60 @@ export class TaskService {
             transition.actionName,
             null,
           )
+          await this.notifyDependencyStateChange(
+            sql,
+            workspaceId,
+            userId,
+            taskId,
+            task.columnId,
+            input.action.columnId,
+          )
         } else if (input.action.type === 'PRIORITY') {
           await sql`UPDATE tasks SET priority=${input.action.priority},version=version+1,updated_at=now() WHERE id=${taskId} AND workspace_id=${workspaceId}`
         } else if (input.action.type === 'KIND') {
           await sql`UPDATE tasks SET kind=${input.action.kind},version=version+1,updated_at=now() WHERE id=${taskId} AND workspace_id=${workspaceId}`
         } else {
           await sql`UPDATE tasks SET deleted_at=now(),deleted_by=${userId},version=version+1,updated_at=now() WHERE id=${taskId} AND workspace_id=${workspaceId}`
+          await this.notifyDependentsOfBlocker(sql, workspaceId, userId, taskId, 'DELETED')
         }
         await sql`INSERT INTO activities(workspace_id,task_id,actor_id,action,data) VALUES(${workspaceId},${taskId},${userId},${input.action.type === 'DELETE' ? 'task.bulk_deleted' : 'task.bulk_updated'},${JSON.stringify(input.action)}::jsonb)`
         updated++
       }
       return { updated }
+    })
+  }
+  async remove(workspaceId: string, userId: string, taskId: string) {
+    await this.workspaces.role(workspaceId, userId, 'task.delete')
+    return this.db.client.begin(async (sql) => {
+      const [task] =
+        await sql`SELECT id FROM tasks WHERE id=${taskId} AND workspace_id=${workspaceId} AND deleted_at IS NULL FOR UPDATE`
+      if (!task) throw new NotFoundException({ code: 'TASK_NOT_FOUND', message: '任务不存在' })
+      await sql`UPDATE tasks SET deleted_at=now(),deleted_by=${userId},version=version+1,updated_at=now() WHERE id=${taskId}`
+      await this.notifyDependentsOfBlocker(sql, workspaceId, userId, taskId, 'DELETED')
+      return { ok: true }
+    })
+  }
+  async setArchived(workspaceId: string, userId: string, taskId: string, archived: boolean) {
+    await this.workspaces.role(workspaceId, userId, 'task.update')
+    return this.db.client.begin(async (sql) => {
+      const [task] = await sql<
+        { archived: boolean; deleted: boolean }[]
+      >`SELECT archived_at IS NOT NULL AS archived,deleted_at IS NOT NULL AS deleted FROM tasks WHERE id=${taskId} AND workspace_id=${workspaceId} FOR UPDATE`
+      if (!task || (archived && task.deleted))
+        throw new NotFoundException({ code: 'TASK_NOT_FOUND', message: '任务不存在' })
+      if (task.archived === archived && (!task.deleted || archived)) return { ok: true }
+      if (archived)
+        await sql`UPDATE tasks SET archived_at=now(),version=version+1,updated_at=now() WHERE id=${taskId}`
+      else
+        await sql`UPDATE tasks SET archived_at=NULL,deleted_at=NULL,deleted_by=NULL,version=version+1,updated_at=now() WHERE id=${taskId}`
+      await this.notifyDependentsOfBlocker(
+        sql,
+        workspaceId,
+        userId,
+        taskId,
+        archived ? 'ARCHIVED' : 'RESTORED',
+      )
+      return { ok: true }
     })
   }
 }
@@ -689,6 +1024,38 @@ export class TaskController {
   ) {
     return this.tasks.bulkUpdate(workspaceId, req.user!.id, parse(taskBulkSchema, body))
   }
+  @Get(':id/dependencies') dependencies(
+    @Req() req: AppRequest,
+    @Param('workspaceId') workspaceId: string,
+    @Param('id') id: string,
+  ) {
+    return this.tasks.dependencies(workspaceId, req.user!.id, id)
+  }
+  @Get(':id/dependency-candidates') dependencyCandidates(
+    @Req() req: AppRequest,
+    @Param('workspaceId') workspaceId: string,
+    @Param('id') id: string,
+    @Query() query: unknown,
+  ) {
+    return this.tasks.dependencyCandidates(workspaceId, req.user!.id, id, query)
+  }
+  @Post(':id/dependencies') addBlocker(
+    @Req() req: AppRequest,
+    @Param('workspaceId') workspaceId: string,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    const input = parse(taskDependencyCreateSchema, body)
+    return this.tasks.addBlocker(workspaceId, req.user!.id, id, input.blockerTaskId)
+  }
+  @Delete(':id/dependencies/:blockerTaskId') removeBlocker(
+    @Req() req: AppRequest,
+    @Param('workspaceId') workspaceId: string,
+    @Param('id') id: string,
+    @Param('blockerTaskId') blockerTaskId: string,
+  ) {
+    return this.tasks.removeBlocker(workspaceId, req.user!.id, id, blockerTaskId)
+  }
   @Post(':id/transitions') transition(
     @Req() req: AppRequest,
     @Param('workspaceId') workspaceId: string,
@@ -719,30 +1086,21 @@ export class TaskController {
     @Param('workspaceId') workspaceId: string,
     @Param('id') id: string,
   ) {
-    await this.workspaces.role(workspaceId, req.user!.id, 'task.delete')
-    await this.db
-      .client`UPDATE tasks SET deleted_at=now(),deleted_by=${req.user!.id} WHERE id=${id} AND workspace_id=${workspaceId}`
-    return { ok: true }
+    return this.tasks.remove(workspaceId, req.user!.id, id)
   }
   @Post(':id/archive') async archive(
     @Req() req: AppRequest,
     @Param('workspaceId') workspaceId: string,
     @Param('id') id: string,
   ) {
-    await this.workspaces.role(workspaceId, req.user!.id, 'task.update')
-    await this.db
-      .client`UPDATE tasks SET archived_at=now() WHERE id=${id} AND workspace_id=${workspaceId}`
-    return { ok: true }
+    return this.tasks.setArchived(workspaceId, req.user!.id, id, true)
   }
   @Post(':id/restore') async restore(
     @Req() req: AppRequest,
     @Param('workspaceId') workspaceId: string,
     @Param('id') id: string,
   ) {
-    await this.workspaces.role(workspaceId, req.user!.id, 'task.update')
-    await this.db
-      .client`UPDATE tasks SET archived_at=NULL,deleted_at=NULL,deleted_by=NULL WHERE id=${id} AND workspace_id=${workspaceId}`
-    return { ok: true }
+    return this.tasks.setArchived(workspaceId, req.user!.id, id, false)
   }
   @Get(':id/watch') async watchState(
     @Req() req: AppRequest,
