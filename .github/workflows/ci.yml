@@ -31,5 +31,6 @@ jobs:
       - run: pnpm build
       - run: pnpm --filter @xian/web exec playwright install --with-deps chromium
       - run: pnpm --filter @xian/web test:e2e
+      # package.json only exempts unused React Router RSC APIs and ExcelJS's internal glob patterns.
       - run: pnpm --registry=https://registry.npmjs.org audit --audit-level=high
       - run: docker build --build-arg APP_COMMIT=${{ github.sha }} -t xian:${{ github.sha }} .
