@@ -144,6 +144,80 @@ describe('authenticated project flow', () => {
       .set('x-csrf-token', csrf)
       .expect(200)
   })
+  it('batch-creates subtasks atomically and renames them', async () => {
+    const parent = await request(app.getHttpServer())
+        .post(`/api/v1/workspaces/${workspaceId}/tasks`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({ projectId, columnId, title: '拆分验收任务' })
+        .expect(201),
+      parentId = parent.body.id as string,
+      subtaskPath = `/api/v1/workspaces/${workspaceId}/tasks/${parentId}/subtasks`
+
+    try {
+      const created = await request(app.getHttpServer())
+        .post(`${subtaskPath}/batch`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({ titles: ['确认范围', '实现接口', '覆盖边界场景'] })
+        .expect(201)
+      expect(created.body.map((item: { title: string }) => item.title)).toEqual([
+        '确认范围',
+        '实现接口',
+        '覆盖边界场景',
+      ])
+      expect(
+        created.body.map((item: { position: string | number }) => Number(item.position)),
+      ).toEqual([1000, 2000, 3000])
+
+      const duplicate = await request(app.getHttpServer())
+        .post(`${subtaskPath}/batch`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({ titles: ['不会落库', '实现接口'] })
+        .expect(400)
+      expect(duplicate.body.code).toBe('SUBTASK_TITLE_DUPLICATE')
+
+      await request(app.getHttpServer())
+        .post(`${subtaskPath}/batch`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({ titles: ['同样不会落库', 'x'.repeat(301)] })
+        .expect(400)
+
+      const unchanged = await request(app.getHttpServer())
+        .get(subtaskPath)
+        .set('Cookie', cookie)
+        .expect(200)
+      expect(unchanged.body.map((item: { title: string }) => item.title)).toEqual([
+        '确认范围',
+        '实现接口',
+        '覆盖边界场景',
+      ])
+
+      const duplicateRename = await request(app.getHttpServer())
+        .patch(`${subtaskPath}/${created.body[1].id}`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({ title: '确认范围' })
+        .expect(400)
+      expect(duplicateRename.body.code).toBe('SUBTASK_TITLE_DUPLICATE')
+
+      const renamed = await request(app.getHttpServer())
+        .patch(`${subtaskPath}/${created.body[1].id}`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({ title: '实现并联调接口' })
+        .expect(200)
+      expect(renamed.body.title).toBe('实现并联调接口')
+    } finally {
+      await request(app.getHttpServer())
+        .delete(`/api/v1/workspaces/${workspaceId}/tasks/${parentId}`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .expect(200)
+    }
+  })
   it('automatically follows created tasks and can toggle following', async () => {
     const initial = await request(app.getHttpServer())
       .get(`/api/v1/workspaces/${workspaceId}/tasks/${taskId}/watch`)

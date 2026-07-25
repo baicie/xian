@@ -57,9 +57,32 @@ const importFieldsSchema = z
     mapping: z.string().max(5000).optional(),
   })
   .strict()
-const subtaskCreateSchema = z.object({ title: z.string().trim().min(1).max(300) }).strict()
+const normalizeSubtaskTitle = (title: string) => title.replace(/\s+/g, ' ').toLowerCase()
+const subtaskTitleSchema = z.string().trim().min(1).max(300)
+const subtaskCreateSchema = z.object({ title: subtaskTitleSchema }).strict()
+const subtaskBatchCreateSchema = z
+  .object({
+    titles: z
+      .array(subtaskTitleSchema)
+      .min(1)
+      .max(50)
+      .superRefine((titles, context) => {
+        const seen = new Set<string>()
+        for (const [index, title] of titles.entries()) {
+          const normalized = normalizeSubtaskTitle(title)
+          if (seen.has(normalized))
+            context.addIssue({
+              code: 'custom',
+              path: [index],
+              message: '子任务标题不能重复',
+            })
+          else seen.add(normalized)
+        }
+      }),
+  })
+  .strict()
 const subtaskUpdateSchema = z
-  .object({ title: z.string().trim().min(1).max(300).optional(), isDone: z.boolean().optional() })
+  .object({ title: subtaskTitleSchema.optional(), isDone: z.boolean().optional() })
   .strict()
   .refine((input) => input.title !== undefined || input.isDone !== undefined)
 const subtaskReorderSchema = z
@@ -523,6 +546,43 @@ export class TaskController {
     private readonly workspaces: WorkspaceService,
     private readonly db: DatabaseService,
   ) {}
+  private async insertSubtasks(workspaceId: string, taskId: string, titles: string[]) {
+    return this.db.client.begin(async (sql) => {
+      const [task] =
+        await sql`SELECT id FROM tasks WHERE id=${taskId} AND workspace_id=${workspaceId} AND deleted_at IS NULL FOR UPDATE`
+      if (!task) throw new NotFoundException({ code: 'TASK_NOT_FOUND', message: '任务不存在' })
+      const [summary] = await sql<
+        { count: number; maxPosition: string | null }[]
+      >`SELECT count(*)::int AS count,max(position) AS "maxPosition" FROM checklist_items WHERE task_id=${taskId} AND workspace_id=${workspaceId}`
+      if ((summary?.count ?? 0) + titles.length > 200)
+        throw new BadRequestException({
+          code: 'SUBTASK_LIMIT_REACHED',
+          message: '每个任务最多包含 200 个子任务',
+        })
+      const existing = await sql<
+          { title: string }[]
+        >`SELECT title FROM checklist_items WHERE task_id=${taskId} AND workspace_id=${workspaceId}`,
+        seen = new Set(existing.map((item) => normalizeSubtaskTitle(item.title)))
+      for (const title of titles) {
+        const normalized = normalizeSubtaskTitle(title)
+        if (seen.has(normalized))
+          throw new BadRequestException({
+            code: 'SUBTASK_TITLE_DUPLICATE',
+            message: '子任务标题不能重复',
+          })
+        seen.add(normalized)
+      }
+      const basePosition = Number(summary?.maxPosition ?? 0),
+        created: { id: string; title: string; isDone: boolean; position: string }[] = []
+      for (const [index, title] of titles.entries()) {
+        const [row] = await sql<
+          { id: string; title: string; isDone: boolean; position: string }[]
+        >`INSERT INTO checklist_items(workspace_id,task_id,title,position) VALUES(${workspaceId},${taskId},${title},${basePosition + (index + 1) * 1000}) RETURNING id,title,is_done AS "isDone",position`
+        created.push(row!)
+      }
+      return created
+    })
+  }
   @Get() list(
     @Req() req: AppRequest,
     @Param('workspaceId') workspaceId: string,
@@ -691,10 +751,18 @@ export class TaskController {
   ) {
     await this.workspaces.role(workspaceId, req.user!.id, 'task.update')
     const input = parse(subtaskCreateSchema, body)
-    const [row] = await this.db
-      .client`INSERT INTO checklist_items(workspace_id,task_id,title,position) SELECT ${workspaceId},${id},${input.title},coalesce((SELECT max(position)+1000 FROM checklist_items WHERE task_id=${id}),1000) WHERE EXISTS(SELECT 1 FROM tasks WHERE id=${id} AND workspace_id=${workspaceId} AND deleted_at IS NULL) RETURNING id,title,is_done AS "isDone",position`
-    if (!row) throw new NotFoundException({ code: 'TASK_NOT_FOUND', message: '任务不存在' })
-    return row
+    const [created] = await this.insertSubtasks(workspaceId, id, [input.title])
+    return created
+  }
+  @Post(':id/subtasks/batch') async addSubtasks(
+    @Req() req: AppRequest,
+    @Param('workspaceId') workspaceId: string,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    await this.workspaces.role(workspaceId, req.user!.id, 'task.update')
+    const input = parse(subtaskBatchCreateSchema, body)
+    return this.insertSubtasks(workspaceId, id, input.titles)
   }
   @Patch(':id/subtasks/reorder') async reorderSubtasks(
     @Req() req: AppRequest,
@@ -733,7 +801,36 @@ export class TaskController {
     @Body() body: unknown,
   ) {
     await this.workspaces.role(workspaceId, req.user!.id, 'task.update')
-    const input = parse(subtaskUpdateSchema, body)
+    const input = parse(subtaskUpdateSchema, body),
+      nextTitle = input.title
+    if (nextTitle !== undefined)
+      return this.db.client.begin(async (sql) => {
+        const [task] =
+          await sql`SELECT id FROM tasks WHERE id=${id} AND workspace_id=${workspaceId} AND deleted_at IS NULL FOR UPDATE`
+        if (!task)
+          throw new NotFoundException({ code: 'SUBTASK_NOT_FOUND', message: '子任务不存在' })
+        const [subtask] =
+          await sql`SELECT id FROM checklist_items WHERE id=${subtaskId} AND task_id=${id} AND workspace_id=${workspaceId}`
+        if (!subtask)
+          throw new NotFoundException({ code: 'SUBTASK_NOT_FOUND', message: '子任务不存在' })
+        const existing = await sql<
+          { title: string }[]
+        >`SELECT title FROM checklist_items WHERE task_id=${id} AND workspace_id=${workspaceId} AND id<>${subtaskId}`
+        if (
+          existing.some(
+            (item) => normalizeSubtaskTitle(item.title) === normalizeSubtaskTitle(nextTitle),
+          )
+        )
+          throw new BadRequestException({
+            code: 'SUBTASK_TITLE_DUPLICATE',
+            message: '子任务标题不能重复',
+          })
+        const [row] =
+          await sql`UPDATE checklist_items SET title=${nextTitle},is_done=coalesce(${input.isDone ?? null},is_done) WHERE id=${subtaskId} AND task_id=${id} AND workspace_id=${workspaceId} RETURNING id,title,is_done AS "isDone",position`
+        if (!row)
+          throw new NotFoundException({ code: 'SUBTASK_NOT_FOUND', message: '子任务不存在' })
+        return row
+      })
     const [row] = await this.db
       .client`UPDATE checklist_items SET title=coalesce(${input.title ?? null},title),is_done=coalesce(${input.isDone ?? null},is_done) WHERE id=${subtaskId} AND task_id=${id} AND workspace_id=${workspaceId} RETURNING id,title,is_done AS "isDone",position`
     if (!row) throw new NotFoundException({ code: 'SUBTASK_NOT_FOUND', message: '子任务不存在' })

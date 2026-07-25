@@ -3377,7 +3377,7 @@ h1 {
 .task-subtasks-heading {
   justify-content: space-between;
 }
-.task-subtasks-heading svg {
+.task-subtasks-heading > span > svg {
   width: 16px;
   color: var(--muted);
 }
@@ -3387,6 +3387,19 @@ h1 {
 .task-subtasks-heading small {
   color: var(--muted);
   font-size: 10px;
+}
+.task-subtasks-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.task-subtasks-heading-actions > small {
+  min-width: 34px;
+  text-align: right;
+}
+.task-subtasks-heading-actions button svg {
+  width: 14px;
+  color: currentColor;
 }
 .subtask-list {
   display: grid;
@@ -3403,10 +3416,12 @@ h1 {
 .subtask-list > div + div {
   border-top: 1px solid var(--line);
 }
-.subtask-list span {
+.subtask-list .subtask-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 12px;
 }
-.subtask-list span[data-done] {
+.subtask-list .subtask-title[data-done] {
   color: var(--muted);
   text-decoration: line-through;
 }
@@ -3416,6 +3431,17 @@ h1 {
 .subtask-actions {
   display: flex;
   align-items: center;
+}
+.subtask-inline-edit {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px 28px;
+  align-items: center;
+  gap: 4px;
+}
+.subtask-inline-edit input {
+  min-width: 0;
+  height: 30px;
 }
 .subtask-progress {
   height: 5px;
@@ -3432,6 +3458,24 @@ h1 {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 36px;
   gap: 7px;
+}
+.subtask-decompose-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-width: 560px;
+}
+.subtask-decompose-form {
+  display: grid;
+  gap: 16px;
+}
+.subtask-decompose-form textarea {
+  min-height: 210px;
+  max-height: min(50vh, 360px);
+  resize: vertical;
+}
+.subtask-draft-meta {
+  display: flex;
+  justify-content: flex-end;
+  font-variant-numeric: tabular-nums;
 }
 .task-progress {
   margin: -3px 0 8px;
@@ -3490,6 +3534,13 @@ h1 {
 @media (max-width: 620px) {
   .quick-entry {
     margin-inline: 14px;
+  }
+  .task-subtasks-heading {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .task-subtasks-heading-actions {
+    margin-left: auto;
   }
   .asset-quota {
     align-items: stretch;
