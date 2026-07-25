@@ -218,6 +218,13 @@ export const iterationTaskMoveSchema = z
     action: z.enum(['ADD', 'REMOVE']),
   })
   .strict()
+export const iterationTaskCandidateQuerySchema = z
+  .object({
+    query: z.string().trim().max(200).default(''),
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  })
+  .strict()
 export const iterationCloseSchema = z.discriminatedUnion('unfinishedAction', [
   z.object({ unfinishedAction: z.literal('BACKLOG') }).strict(),
   z

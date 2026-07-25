@@ -152,12 +152,30 @@ test('opens task card actions from the context menu', async ({ page }) => {
           },
         ],
       },
+      '/api/v1/workspaces/workspace-1/projects/project-1/iterations': [
+        {
+          id: 'iteration-closed',
+          projectId: 'project-1',
+          title: '历史迭代',
+          goal: '',
+          startDate: '2026-07-01',
+          endDate: '2026-07-14',
+          status: 'CLOSED',
+          version: 2,
+          closedAt: '2026-07-14T08:00:00.000Z',
+          createdAt: '2026-07-01T00:00:00.000Z',
+          updatedAt: '2026-07-14T08:00:00.000Z',
+          taskCount: 1,
+          completedCount: 1,
+        },
+      ],
       '/api/v1/workspaces/workspace-1/tasks': {
         data: [
           {
             id: 'task-1',
             number: 1,
             projectId: 'project-1',
+            iterationId: 'iteration-closed',
             columnId: 'todo',
             title: '右键测试任务',
             description: '',
@@ -197,7 +215,11 @@ test('opens task card actions from the context menu', async ({ page }) => {
   await expect(taskMenu.getByRole('menuitem', { name: '移动到' })).toBeVisible()
   await expect(taskMenu.getByRole('menuitem', { name: '删除任务' })).toBeVisible()
   await taskMenu.getByRole('menuitem', { name: '打开任务' }).click()
-  await expect(page.getByRole('dialog', { name: '任务详情' })).toBeVisible()
+  const taskDialog = page.getByRole('dialog', { name: '任务详情' })
+  await expect(taskDialog).toBeVisible()
+  const iterationSelect = taskDialog.getByRole('combobox', { name: '迭代' })
+  await expect(iterationSelect).toContainText('历史迭代 · 已关闭')
+  await expect(iterationSelect).toBeDisabled()
   await page.keyboard.press('Escape')
 
   await taskCard.click({ button: 'right' })
@@ -288,6 +310,8 @@ test('registers a workspace, creates a task, and opens a document editor', async
   await expect(currentIteration.getByText('进行中', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: '纳入任务' }).click()
   const taskPicker = page.getByRole('dialog', { name: '纳入待规划任务' })
+  await taskPicker.getByLabel('搜索待规划任务').fill('登录服务')
+  await taskPicker.getByRole('button', { name: '搜索', exact: true }).click()
   await taskPicker.getByRole('checkbox', { name: /登录服务异常/ }).check()
   await taskPicker.getByRole('button', { name: '纳入 1 项' }).click()
   await expect(page.locator('.iteration-task-table').getByText('登录服务异常')).toBeVisible()

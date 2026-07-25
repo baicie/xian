@@ -3930,6 +3930,37 @@ h1 {
   display: grid;
   gap: 14px;
 }
+.iteration-task-search,
+.iteration-task-pagination,
+.iteration-task-pagination > span {
+  display: flex;
+  align-items: center;
+}
+.iteration-task-search {
+  gap: 8px;
+}
+.iteration-task-search input {
+  min-width: 0;
+}
+.iteration-task-pagination {
+  min-height: 32px;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.iteration-task-pagination > span:last-child {
+  gap: 6px;
+}
+.iteration-task-loading {
+  display: grid;
+  gap: 8px;
+}
+.iteration-task-skeleton {
+  height: 55px;
+  border-radius: 8px;
+}
 .iteration-date-fields {
   grid-template-columns: 1fr 1fr;
 }

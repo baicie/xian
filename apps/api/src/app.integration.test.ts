@@ -845,6 +845,43 @@ describe('authenticated project flow', () => {
     ])
     expect(closedTasks.body.map((task: { id: string }) => task.id)).toEqual([completed.body.id])
     expect(carriedTasks.body.map((task: { id: string }) => task.id)).toEqual([unfinished.body.id])
+
+    const moveFromClosed = await request(app.getHttpServer())
+      .patch(`/api/v1/workspaces/${workspaceId}/tasks/${completed.body.id}`)
+      .set('Cookie', cookie)
+      .set('x-csrf-token', csrf)
+      .send({ iterationId: next.body.id, version: completed.body.version })
+      .expect(400)
+    expect(moveFromClosed.body.code).toBe('ITERATION_CLOSED')
+
+    const bulkMoveFromClosed = await request(app.getHttpServer())
+      .patch(`${path}/${next.body.id}/tasks`)
+      .set('Cookie', cookie)
+      .set('x-csrf-token', csrf)
+      .send({ taskIds: [completed.body.id], action: 'ADD' })
+      .expect(400)
+    expect(bulkMoveFromClosed.body.code).toBe('ITERATION_TASKS_ALREADY_PLANNED')
+
+    for (const title of ['候选任务一', '候选任务二', '候选任务三'])
+      await request(app.getHttpServer())
+        .post(`/api/v1/workspaces/${workspaceId}/tasks`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({ projectId: project.body.id, columnId: columns.body[0].id, title })
+        .expect(201)
+
+    const candidatePage = await request(app.getHttpServer())
+      .get(`${path}/${next.body.id}/candidates?query=候选&page=2&pageSize=2`)
+      .set('Cookie', cookie)
+      .expect(200)
+    expect(candidatePage.body.pagination).toEqual({
+      page: 2,
+      pageSize: 2,
+      totalItems: 3,
+      totalPages: 2,
+    })
+    expect(candidatePage.body.data).toHaveLength(1)
+    expect(candidatePage.body.data[0].title).toBe('候选任务三')
   })
   it('exports and restores iteration assignments', async () => {
     const workspace = await request(app.getHttpServer())

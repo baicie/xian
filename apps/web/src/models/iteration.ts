@@ -33,6 +33,23 @@ export type IterationTask = {
   assignees: { id: string; name: string }[]
 }
 
+export type IterationTaskCandidate = {
+  id: string
+  number: number
+  title: string
+  assignees: { id: string; name: string }[]
+}
+
+export type IterationTaskCandidatePage = {
+  data: IterationTaskCandidate[]
+  pagination: {
+    page: number
+    pageSize: number
+    totalItems: number
+    totalPages: number
+  }
+}
+
 export type ProjectHealth = {
   totalTasks: number
   completedTasks: number

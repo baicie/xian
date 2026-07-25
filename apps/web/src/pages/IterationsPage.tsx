@@ -3,19 +3,26 @@ import {
   ArrowRight,
   CalendarRange,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   CircleAlert,
   ListChecks,
   PencilLine,
   Play,
   Plus,
   RotateCcw,
+  Search,
   UserRoundX,
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/api'
-import type { Task } from '@/models/board'
-import type { Iteration, IterationTask, ProjectHealth } from '@/models/iteration'
+import type {
+  Iteration,
+  IterationTask,
+  IterationTaskCandidate,
+  ProjectHealth,
+} from '@/models/iteration'
 import ChoiceSelect from '@/components/ChoiceSelect'
 import {
   AlertDialog,
@@ -43,6 +50,7 @@ import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Progress, ProgressLabel } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
   TableBody,
@@ -65,6 +73,12 @@ const plusDays = (date: string, days: number) => {
 const emptyDraft = (): IterationDraft => {
   const startDate = today()
   return { title: '', goal: '', startDate, endDate: plusDays(startDate, 13) }
+}
+const emptyCandidatePagination = {
+  page: 1,
+  pageSize: 25,
+  totalItems: 0,
+  totalPages: 0,
 }
 
 const statusCopy = {
@@ -95,7 +109,11 @@ export default function IterationsPage({
     [health, setHealth] = useState<ProjectHealth | null>(null),
     [editing, setEditing] = useState<Iteration | 'new' | null>(null),
     [addingTasks, setAddingTasks] = useState(false),
-    [backlog, setBacklog] = useState<Task[]>([]),
+    [backlog, setBacklog] = useState<IterationTaskCandidate[]>([]),
+    [backlogSearch, setBacklogSearch] = useState(''),
+    [appliedBacklogSearch, setAppliedBacklogSearch] = useState(''),
+    [backlogPagination, setBacklogPagination] = useState(emptyCandidatePagination),
+    [backlogLoading, setBacklogLoading] = useState(false),
     [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]),
     [closing, setClosing] = useState<Iteration | null>(null),
     [closeAction, setCloseAction] = useState<'BACKLOG' | 'CARRY_OVER'>('BACKLOG'),
@@ -177,16 +195,34 @@ export default function IterationsPage({
     }
   }
 
-  const openTaskPicker = async () => {
-    if (!selectedIteration) return
+  const loadTaskCandidates = async (iterationId: string, page: number, query: string) => {
+    setBacklogLoading(true)
     try {
-      const allTasks = await api.tasks(workspaceId, selectedProjectId)
-      setBacklog(allTasks.filter((task) => !task.iterationId))
-      setSelectedTaskIds([])
-      setAddingTasks(true)
+      const result = await api.iterationTaskCandidates(
+        workspaceId,
+        selectedProjectId,
+        iterationId,
+        { page, pageSize: 25, query },
+      )
+      setBacklog(result.data)
+      setBacklogPagination(result.pagination)
+      setAppliedBacklogSearch(query.trim())
     } catch (reason) {
       toast.error(reason instanceof Error ? reason.message : '加载待规划任务失败')
+    } finally {
+      setBacklogLoading(false)
     }
+  }
+
+  const openTaskPicker = () => {
+    if (!selectedIteration) return
+    setBacklog([])
+    setBacklogSearch('')
+    setAppliedBacklogSearch('')
+    setBacklogPagination(emptyCandidatePagination)
+    setSelectedTaskIds([])
+    setAddingTasks(true)
+    void loadTaskCandidates(selectedIteration.id, 1, '')
   }
 
   if (!projects.length)
@@ -415,8 +451,41 @@ export default function IterationsPage({
               {en ? 'Choose unplanned tasks for this iteration.' : '选择尚未进入其他迭代的任务。'}
             </DialogDescription>
           </DialogHeader>
+          <form
+            className="iteration-task-search"
+            onSubmit={(event) => {
+              event.preventDefault()
+              if (selectedIteration) void loadTaskCandidates(selectedIteration.id, 1, backlogSearch)
+            }}
+          >
+            <Input
+              aria-label={en ? 'Search backlog tasks' : '搜索待规划任务'}
+              placeholder={en ? 'Search by title' : '按标题搜索'}
+              value={backlogSearch}
+              onChange={(event) => setBacklogSearch(event.target.value)}
+            />
+            <Button
+              type="submit"
+              size="icon"
+              variant="outline"
+              aria-label={en ? 'Search' : '搜索'}
+              title={en ? 'Search' : '搜索'}
+              disabled={backlogLoading}
+            >
+              <Search />
+            </Button>
+          </form>
           <div className="iteration-task-options">
-            {backlog.length ? (
+            {backlogLoading ? (
+              <div
+                className="iteration-task-loading"
+                aria-label={en ? 'Loading tasks' : '加载任务'}
+              >
+                {Array.from({ length: 4 }, (_, index) => (
+                  <Skeleton key={index} className="iteration-task-skeleton" />
+                ))}
+              </div>
+            ) : backlog.length ? (
               backlog.map((task) => {
                 const id = `iteration-task-${task.id}`,
                   checked = selectedTaskIds.includes(task.id)
@@ -425,18 +494,19 @@ export default function IterationsPage({
                     <Checkbox
                       id={id}
                       checked={checked}
+                      disabled={!checked && selectedTaskIds.length >= 100}
                       onCheckedChange={(value) =>
-                        setSelectedTaskIds((current) =>
-                          value
-                            ? [...current, task.id]
-                            : current.filter((taskId) => taskId !== task.id),
-                        )
+                        setSelectedTaskIds((current) => {
+                          if (!value) return current.filter((taskId) => taskId !== task.id)
+                          if (current.includes(task.id) || current.length >= 100) return current
+                          return [...current, task.id]
+                        })
                       }
                     />
                     <span>
                       <strong>{task.title}</strong>
                       <small>
-                        #{task.number} · {task.assignee}
+                        #{task.number} · {task.assignees[0]?.name ?? (en ? 'Unassigned' : '未分配')}
                       </small>
                     </span>
                   </label>
@@ -445,10 +515,67 @@ export default function IterationsPage({
             ) : (
               <Empty>
                 <EmptyHeader>
-                  <EmptyTitle>{en ? 'No unplanned tasks' : '没有待规划任务'}</EmptyTitle>
+                  <EmptyTitle>
+                    {appliedBacklogSearch
+                      ? en
+                        ? 'No matching tasks'
+                        : '没有匹配任务'
+                      : en
+                        ? 'No unplanned tasks'
+                        : '没有待规划任务'}
+                  </EmptyTitle>
                 </EmptyHeader>
               </Empty>
             )}
+          </div>
+          <div className="iteration-task-pagination" aria-live="polite">
+            <span>
+              {en
+                ? `${backlogPagination.totalItems} tasks · page ${backlogPagination.page} of ${Math.max(backlogPagination.totalPages, 1)}`
+                : `${backlogPagination.totalItems} 项 · 第 ${backlogPagination.page} / ${Math.max(backlogPagination.totalPages, 1)} 页`}
+            </span>
+            <span>
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="outline"
+                aria-label={en ? 'Previous page' : '上一页'}
+                title={en ? 'Previous page' : '上一页'}
+                disabled={backlogLoading || backlogPagination.page <= 1 || !selectedIteration}
+                onClick={() => {
+                  if (selectedIteration)
+                    void loadTaskCandidates(
+                      selectedIteration.id,
+                      backlogPagination.page - 1,
+                      appliedBacklogSearch,
+                    )
+                }}
+              >
+                <ChevronLeft />
+              </Button>
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="outline"
+                aria-label={en ? 'Next page' : '下一页'}
+                title={en ? 'Next page' : '下一页'}
+                disabled={
+                  backlogLoading ||
+                  backlogPagination.page >= backlogPagination.totalPages ||
+                  !selectedIteration
+                }
+                onClick={() => {
+                  if (selectedIteration)
+                    void loadTaskCandidates(
+                      selectedIteration.id,
+                      backlogPagination.page + 1,
+                      appliedBacklogSearch,
+                    )
+                }}
+              >
+                <ChevronRight />
+              </Button>
+            </span>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddingTasks(false)}>
