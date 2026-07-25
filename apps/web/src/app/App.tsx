@@ -830,6 +830,15 @@ function TaskDialog({
     }
   }, [task, workspaceId])
   if (!draft) return null
+  const currentTaskIteration = taskIterations.find(
+      (iteration) => iteration.id === draft.iterationId,
+    ),
+    iterationAssignmentLocked = Boolean(
+      draft.id !== 'new' &&
+      draft.iterationId &&
+      currentTaskIteration?.status !== 'PLANNED' &&
+      currentTaskIteration?.status !== 'ACTIVE',
+    )
   const save = async () => {
     if (!draft.title.trim()) return
     try {
@@ -972,6 +981,7 @@ function TaskDialog({
                       })
                     }
                     className="choice-select"
+                    disabled={iterationAssignmentLocked}
                   />
                 </Field>
               </FieldGroup>

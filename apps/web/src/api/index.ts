@@ -1,7 +1,12 @@
 import type { Task } from '@/models/board'
 import { createTaskTypeFields, type TaskTypeFields } from '@/models/taskFields'
 import type { ProjectWorkflow, TaskTransitionEvent, WorkflowTemplateKey } from '@/models/workflow'
-import type { Iteration, IterationTask, ProjectHealth } from '@/models/iteration'
+import type {
+  Iteration,
+  IterationTask,
+  IterationTaskCandidatePage,
+  ProjectHealth,
+} from '@/models/iteration'
 
 export type DocumentKind = 'ARCHITECTURE' | 'REQUIREMENT' | 'DESIGN' | 'MEETING' | 'RETROSPECTIVE'
 export type WorkspaceDocument = {
@@ -379,6 +384,21 @@ export const api = {
   iterationTasks(workspaceId: string, projectId: string, iterationId: string) {
     return request<IterationTask[]>(
       `/workspaces/${workspaceId}/projects/${projectId}/iterations/${iterationId}/tasks`,
+    )
+  },
+  iterationTaskCandidates(
+    workspaceId: string,
+    projectId: string,
+    iterationId: string,
+    options: { query?: string; page?: number; pageSize?: number } = {},
+  ) {
+    const query = new URLSearchParams({
+      page: String(options.page ?? 1),
+      pageSize: String(options.pageSize ?? 25),
+    })
+    if (options.query?.trim()) query.set('query', options.query.trim())
+    return request<IterationTaskCandidatePage>(
+      `/workspaces/${workspaceId}/projects/${projectId}/iterations/${iterationId}/candidates?${query}`,
     )
   },
   moveIterationTasks(

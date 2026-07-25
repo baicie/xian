@@ -354,20 +354,27 @@ export class TaskService {
         if (!column)
           throw new NotFoundException({ code: 'COLUMN_NOT_FOUND', message: '看板列不存在' })
       }
-      if (
-        'iterationId' in input &&
-        input.iterationId &&
-        input.iterationId !== before.iteration_id
-      ) {
-        const [iteration] = await sql<
+      const iterationChanged = 'iterationId' in input && input.iterationId !== before.iteration_id
+      if (iterationChanged && before.iteration_id) {
+        const [currentIteration] = await sql<
+          { status: 'PLANNED' | 'ACTIVE' | 'CLOSED' }[]
+        >`SELECT status FROM iterations WHERE id=${before.iteration_id} AND workspace_id=${workspaceId} AND project_id=${before.project_id} FOR SHARE`
+        if (currentIteration?.status === 'CLOSED')
+          throw new BadRequestException({
+            code: 'ITERATION_CLOSED',
+            message: '已关闭迭代中的任务不能调整迭代归属',
+          })
+      }
+      if (iterationChanged && input.iterationId) {
+        const [targetIteration] = await sql<
           { status: 'PLANNED' | 'ACTIVE' | 'CLOSED' }[]
         >`SELECT status FROM iterations WHERE id=${input.iterationId} AND workspace_id=${workspaceId} AND project_id=${before.project_id} FOR SHARE`
-        if (!iteration)
+        if (!targetIteration)
           throw new BadRequestException({
             code: 'TASK_ITERATION_INVALID',
             message: '迭代不存在或不属于当前项目',
           })
-        if (iteration.status === 'CLOSED')
+        if (targetIteration.status === 'CLOSED')
           throw new BadRequestException({
             code: 'ITERATION_CLOSED',
             message: '任务不能加入已关闭的迭代',

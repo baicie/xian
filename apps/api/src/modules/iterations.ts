@@ -9,6 +9,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
 } from '@nestjs/common'
 import type { Sql, TransactionSql } from 'postgres'
@@ -16,6 +17,7 @@ import { DatabaseService } from '../database/database.service.js'
 import {
   iterationCloseSchema,
   iterationCreateSchema,
+  iterationTaskCandidateQuerySchema,
   iterationTaskMoveSchema,
   iterationUpdateSchema,
 } from '../common/contracts.js'
@@ -245,6 +247,11 @@ export class IterationService {
           })
         await sql`UPDATE tasks SET iteration_id=NULL,version=version+1,updated_at=now() WHERE id IN ${sql(input.taskIds)}`
       } else {
+        if (tasks.some((task) => task.iterationId !== null))
+          throw new BadRequestException({
+            code: 'ITERATION_TASKS_ALREADY_PLANNED',
+            message: '只能纳入尚未进入其他迭代的任务',
+          })
         await sql`UPDATE tasks SET iteration_id=${iterationId},version=version+1,updated_at=now() WHERE id IN ${sql(input.taskIds)}`
       }
       await this.audit(
@@ -282,6 +289,57 @@ export class IterationService {
         AND t.iteration_id=${iterationId} AND t.deleted_at IS NULL
       GROUP BY t.id,c.name,c.state_type,c.position
       ORDER BY c.position,t.position`
+  }
+
+  async candidateTasks(
+    workspaceId: string,
+    userId: string,
+    projectId: string,
+    iterationId: string,
+    input: ReturnType<typeof iterationTaskCandidateQuerySchema.parse>,
+  ) {
+    await this.workspaces.role(workspaceId, userId, 'iteration.read')
+    const [iteration] = await this.db.client<
+      { status: IterationStatus }[]
+    >`SELECT status FROM iterations WHERE id=${iterationId} AND workspace_id=${workspaceId} AND project_id=${projectId}`
+    if (!iteration)
+      throw new NotFoundException({ code: 'ITERATION_NOT_FOUND', message: '迭代不存在' })
+    if (iteration.status === 'CLOSED')
+      throw new BadRequestException({
+        code: 'ITERATION_CLOSED',
+        message: '已关闭的迭代不能纳入任务',
+      })
+
+    const needle = input.query ? `%${input.query}%` : null,
+      offset = (input.page - 1) * input.pageSize
+    const [data, countRows] = await Promise.all([
+      this.db.client`
+        SELECT t.id,t.number,t.title,
+          coalesce(json_agg(json_build_object('id',u.id,'name',u.name)) FILTER(WHERE u.id IS NOT NULL),'[]') AS assignees
+        FROM tasks t
+        JOIN board_columns c ON c.id=t.column_id
+        LEFT JOIN task_assignees ta ON ta.task_id=t.id
+        LEFT JOIN users u ON u.id=ta.user_id
+        WHERE t.workspace_id=${workspaceId} AND t.project_id=${projectId}
+          AND t.iteration_id IS NULL AND t.deleted_at IS NULL AND t.archived_at IS NULL
+          AND (${needle}::text IS NULL OR t.title ILIKE ${needle})
+        GROUP BY t.id,c.position
+        ORDER BY c.position,t.position
+        LIMIT ${input.pageSize} OFFSET ${offset}`,
+      this.db.client<
+        { count: number }[]
+      >`SELECT count(*)::int AS count FROM tasks WHERE workspace_id=${workspaceId} AND project_id=${projectId} AND iteration_id IS NULL AND deleted_at IS NULL AND archived_at IS NULL AND (${needle}::text IS NULL OR title ILIKE ${needle})`,
+    ])
+    const totalItems = countRows[0]?.count ?? 0
+    return {
+      data,
+      pagination: {
+        page: input.page,
+        pageSize: input.pageSize,
+        totalItems,
+        totalPages: Math.ceil(totalItems / input.pageSize),
+      },
+    }
   }
 
   async close(
@@ -502,6 +560,22 @@ export class IterationController {
     @Param('iterationId') iterationId: string,
   ) {
     return this.iterations.tasks(workspaceId, req.user!.id, projectId, iterationId)
+  }
+
+  @Get('iterations/:iterationId/candidates') candidateTasks(
+    @Req() req: AppRequest,
+    @Param('workspaceId') workspaceId: string,
+    @Param('projectId') projectId: string,
+    @Param('iterationId') iterationId: string,
+    @Query() query: unknown,
+  ) {
+    return this.iterations.candidateTasks(
+      workspaceId,
+      req.user!.id,
+      projectId,
+      iterationId,
+      parse(iterationTaskCandidateQuerySchema, query),
+    )
   }
 
   @Get('health') health(
