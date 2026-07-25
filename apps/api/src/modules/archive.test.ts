@@ -8,6 +8,7 @@ const snapshot: WorkspaceSnapshot = {
   workspace: { name: '测试空间' },
   members: [],
   projects: [],
+  iterations: [],
   documents: [],
   plans: [],
   assets: [],
@@ -120,5 +121,41 @@ describe('闲序 archive', () => {
       ],
     }
     expect(readArchive(createArchive(withWorkflow)).projects[0]).toEqual(withWorkflow.projects[0])
+  })
+  it('round-trips iterations and task assignments', () => {
+    const projectSourceId = '00000000-0000-4000-8000-000000000020',
+      iterationSourceId = '00000000-0000-4000-8000-000000000021'
+    const withIteration: WorkspaceSnapshot = {
+      ...snapshot,
+      schemaVersion: 5,
+      iterations: [
+        {
+          sourceId: iterationSourceId,
+          projectSourceId,
+          title: '七月迭代',
+          goal: '交付登录体验',
+          startDate: '2026-07-20',
+          endDate: '2026-07-31',
+          status: 'ACTIVE',
+          version: 2,
+          closedAt: null,
+        },
+      ],
+      projects: [
+        {
+          sourceId: projectSourceId,
+          name: '研发',
+          code: 'DEV',
+          description: '',
+          color: '#2367d1',
+          archived: false,
+          workflowTemplate: 'SIMPLE',
+          columns: [],
+          transitions: [],
+          tasks: [],
+        },
+      ],
+    }
+    expect(readArchive(createArchive(withIteration)).iterations).toEqual(withIteration.iterations)
   })
 })

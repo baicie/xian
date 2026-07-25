@@ -22,6 +22,8 @@ export type Permission =
   | 'plan.read'
   | 'plan.update'
   | 'plan.apply'
+  | 'iteration.read'
+  | 'iteration.manage'
 
 const read: Permission[] = [
   'workspace.read',
@@ -30,6 +32,7 @@ const read: Permission[] = [
   'task.read',
   'document.read',
   'plan.read',
+  'iteration.read',
 ]
 const write: Permission[] = [
   ...read,
@@ -45,6 +48,7 @@ const write: Permission[] = [
   'plan.create',
   'plan.update',
   'plan.apply',
+  'iteration.manage',
 ]
 const manage: Permission[] = [
   ...write,

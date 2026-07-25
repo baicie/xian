@@ -8,6 +8,7 @@ export type Task = {
   id: string
   number: number
   projectId: string
+  iterationId: string | null
   title: string
   kind: TaskKind
   column: ColumnId
@@ -35,6 +36,7 @@ export const seedTasks: Task[] = [
     id: '1042',
     number: 1042,
     projectId: 'demo',
+    iterationId: null,
     title: '重构登录页信息层级',
     kind: 'STORY',
     column: 'progress',
@@ -51,6 +53,7 @@ export const seedTasks: Task[] = [
     id: '1043',
     number: 1043,
     projectId: 'demo',
+    iterationId: null,
     title: '补充接口错误码文档',
     kind: 'TASK',
     column: 'backlog',
@@ -67,6 +70,7 @@ export const seedTasks: Task[] = [
     id: '1044',
     number: 1044,
     projectId: 'demo',
+    iterationId: null,
     title: '移动端导航交互验收',
     kind: 'BUG',
     column: 'review',
@@ -83,6 +87,7 @@ export const seedTasks: Task[] = [
     id: '1045',
     number: 1045,
     projectId: 'demo',
+    iterationId: null,
     title: '埋点方案确认',
     kind: 'TASK',
     column: 'backlog',
@@ -99,6 +104,7 @@ export const seedTasks: Task[] = [
     id: '1046',
     number: 1046,
     projectId: 'demo',
+    iterationId: null,
     title: '建立发布回滚清单',
     kind: 'TASK',
     column: 'done',
@@ -115,6 +121,7 @@ export const seedTasks: Task[] = [
     id: '1047',
     number: 1047,
     projectId: 'demo',
+    iterationId: null,
     title: '任务详情评论区',
     kind: 'STORY',
     column: 'progress',

@@ -69,6 +69,7 @@ export const taskSchema = z
   .object({
     projectId: z.string().uuid(),
     columnId: z.string().uuid(),
+    iterationId: z.string().uuid().nullable().default(null),
     title: z.string().trim().min(1).max(300),
     description: z.string().max(20000).default(''),
     kind: z.enum(['TASK', 'STORY', 'BUG']).default('TASK'),
@@ -82,6 +83,7 @@ export const taskSchema = z
 export const taskPatchSchema = z
   .object({
     columnId: z.string().uuid().optional(),
+    iterationId: z.string().uuid().nullable().optional(),
     title: z.string().trim().min(1).max(300).optional(),
     description: z.string().max(20000).optional(),
     kind: z.enum(['TASK', 'STORY', 'BUG']).optional(),
@@ -181,6 +183,47 @@ export const planUpdateSchema = planCreateSchema
   .partial()
   .extend({ version: z.number().int().positive() })
   .strict()
+
+const iterationFields = {
+  title: z.string().trim().min(1).max(160),
+  goal: z.string().trim().max(4000).default(''),
+  startDate: z.string().date(),
+  endDate: z.string().date(),
+}
+const validIterationRange = <T extends { startDate: string; endDate: string }>(input: T) =>
+  input.startDate <= input.endDate
+export const iterationCreateSchema = z
+  .object(iterationFields)
+  .strict()
+  .refine(validIterationRange, {
+    message: 'endDate must be on or after startDate',
+    path: ['endDate'],
+  })
+export const iterationUpdateSchema = z
+  .object({
+    title: iterationFields.title.optional(),
+    goal: iterationFields.goal.optional(),
+    startDate: iterationFields.startDate.optional(),
+    endDate: iterationFields.endDate.optional(),
+    version: z.number().int().positive(),
+  })
+  .strict()
+export const iterationTaskMoveSchema = z
+  .object({
+    taskIds: z
+      .array(z.string().uuid())
+      .min(1)
+      .max(100)
+      .refine((ids) => new Set(ids).size === ids.length, 'taskIds must be unique'),
+    action: z.enum(['ADD', 'REMOVE']),
+  })
+  .strict()
+export const iterationCloseSchema = z.discriminatedUnion('unfinishedAction', [
+  z.object({ unfinishedAction: z.literal('BACKLOG') }).strict(),
+  z
+    .object({ unfinishedAction: z.literal('CARRY_OVER'), targetIterationId: z.string().uuid() })
+    .strict(),
+])
 
 export type ApiErrorResponse = {
   code: string
