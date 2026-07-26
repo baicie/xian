@@ -51,6 +51,31 @@ export type IterationTaskCandidatePage = {
   }
 }
 
+export type IterationRetrospective = {
+  iterationId: string
+  snapshotState: 'CAPTURED' | 'PARTIAL'
+  scopeTaskCount: number
+  completedTaskCount: number
+  carryOverTaskCount: number
+  overdueTaskCount: number
+  openBugCount: number
+  blockedTaskCount: number
+  completionRate: number
+  summary: string
+  wentWell: string
+  improvements: string
+  actionItems: string
+  version: number
+  createdAt: string | null
+  updatedAt: string | null
+  updatedByName: string | null
+}
+
+export type IterationRetrospectiveUpdate = Pick<
+  IterationRetrospective,
+  'summary' | 'wentWell' | 'improvements' | 'actionItems' | 'version'
+>
+
 export type ProjectHealth = {
   totalTasks: number
   completedTasks: number

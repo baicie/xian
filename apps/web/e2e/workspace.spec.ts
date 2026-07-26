@@ -362,6 +362,27 @@ test('registers a workspace, creates a task, and opens a document editor', async
   await page.getByRole('option', { name: '下一迭代' }).click()
   await closeDialog.getByRole('button', { name: '确认关闭' }).click()
   await expect(currentIteration.getByText('已关闭', { exact: true })).toBeVisible()
+
+  await currentIteration.click()
+  await page.getByRole('tab', { name: '复盘' }).click()
+  await expect(page.getByText('交付快照', { exact: true })).toBeVisible()
+  await page.getByLabel('总结').fill('登录体验按计划交付。')
+  await page.getByLabel('本次做得好').fill('范围保持聚焦。')
+  await page.getByLabel('下次改进').fill('更早验证边界场景。')
+  await page.getByLabel('行动项').fill('在下次规划中审查结转任务。')
+  await page.getByRole('button', { name: '保存复盘' }).click()
+  await expect(page.getByLabel('总结')).toHaveValue('登录体验按计划交付。')
+  await page.getByRole('button', { name: '复制交付报告' }).click()
+  await expect(page.getByText('交付报告已复制')).toBeVisible()
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  const retrospectivePanel = page.locator('.iteration-retrospective')
+  const retrospectiveBox = await retrospectivePanel.boundingBox()
+  expect(retrospectiveBox).not.toBeNull()
+  expect(retrospectiveBox!.x).toBeGreaterThanOrEqual(0)
+  expect(retrospectiveBox!.x + retrospectiveBox!.width).toBeLessThanOrEqual(390)
+  await page.setViewportSize({ width: 1280, height: 720 })
+
   await page.locator('.iteration-list > button').filter({ hasText: '下一迭代' }).click()
   await expect(page.locator('.iteration-task-table').getByText('登录服务异常')).toBeVisible()
 

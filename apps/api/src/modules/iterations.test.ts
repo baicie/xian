@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { calculateProjectHealth, type HealthTask } from './iterations.js'
+import {
+  calculateIterationRetrospectiveSnapshot,
+  calculateProjectHealth,
+  type HealthTask,
+  type RetrospectiveTask,
+} from './iterations.js'
 
 const task = (overrides: Partial<HealthTask> = {}): HealthTask => ({
   kind: 'TASK',
@@ -70,6 +75,69 @@ describe('project health', () => {
       overdueTasks: 0,
       openBugs: 0,
       unassignedTasks: 0,
+    })
+  })
+})
+
+describe('iteration retrospective snapshot', () => {
+  const retrospectiveTask = (overrides: Partial<RetrospectiveTask> = {}): RetrospectiveTask => ({
+    kind: 'TASK',
+    dueDate: null,
+    done: false,
+    blocked: false,
+    ...overrides,
+  })
+
+  it('captures scope and delivery risks before unfinished work moves', () => {
+    expect(
+      calculateIterationRetrospectiveSnapshot(
+        [
+          retrospectiveTask({ done: true }),
+          retrospectiveTask({ kind: 'BUG', dueDate: '2026-07-24', blocked: true }),
+          retrospectiveTask({ dueDate: '2026-07-25' }),
+        ],
+        '2026-07-25',
+      ),
+    ).toEqual({
+      scopeTaskCount: 3,
+      completedTaskCount: 1,
+      carryOverTaskCount: 2,
+      overdueTaskCount: 1,
+      openBugCount: 1,
+      blockedTaskCount: 1,
+      completionRate: 33,
+    })
+  })
+
+  it('does not count completed work or work due today as an open risk', () => {
+    expect(
+      calculateIterationRetrospectiveSnapshot(
+        [
+          retrospectiveTask({ kind: 'BUG', done: true, dueDate: '2026-07-01', blocked: true }),
+          retrospectiveTask({ dueDate: '2026-07-25' }),
+        ],
+        '2026-07-25',
+      ),
+    ).toMatchObject({
+      scopeTaskCount: 2,
+      completedTaskCount: 1,
+      carryOverTaskCount: 1,
+      overdueTaskCount: 0,
+      openBugCount: 0,
+      blockedTaskCount: 0,
+      completionRate: 50,
+    })
+  })
+
+  it('returns a zero-rate empty snapshot', () => {
+    expect(calculateIterationRetrospectiveSnapshot([], '2026-07-25')).toEqual({
+      scopeTaskCount: 0,
+      completedTaskCount: 0,
+      carryOverTaskCount: 0,
+      overdueTaskCount: 0,
+      openBugCount: 0,
+      blockedTaskCount: 0,
+      completionRate: 0,
     })
   })
 })

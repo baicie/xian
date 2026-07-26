@@ -233,6 +233,16 @@ export const iterationCloseSchema = z.discriminatedUnion('unfinishedAction', [
     .strict(),
 ])
 
+export const iterationRetrospectiveUpdateSchema = z
+  .object({
+    summary: z.string().trim().max(4000),
+    wentWell: z.string().trim().max(8000),
+    improvements: z.string().trim().max(8000),
+    actionItems: z.string().trim().max(8000),
+    version: z.number().int().nonnegative(),
+  })
+  .strict()
+
 export type ApiErrorResponse = {
   code: string
   message: string

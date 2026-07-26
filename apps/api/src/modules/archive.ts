@@ -82,6 +82,24 @@ const iteration = z.object({
   version: z.number().int(),
   closedAt: z.string().nullable(),
 })
+const retrospective = z.object({
+  iterationSourceId: z.string().uuid(),
+  projectSourceId: z.string().uuid(),
+  snapshotState: z.enum(['CAPTURED', 'PARTIAL']),
+  scopeTaskCount: z.number().int().nonnegative(),
+  completedTaskCount: z.number().int().nonnegative(),
+  carryOverTaskCount: z.number().int().nonnegative(),
+  overdueTaskCount: z.number().int().nonnegative(),
+  openBugCount: z.number().int().nonnegative(),
+  blockedTaskCount: z.number().int().nonnegative(),
+  summary: z.string(),
+  wentWell: z.string(),
+  improvements: z.string(),
+  actionItems: z.string(),
+  version: z.number().int().positive(),
+  createdAt: date,
+  updatedAt: date,
+})
 const dependency = z.object({
   blockerTaskSourceId: z.string().uuid(),
   blockedTaskSourceId: z.string().uuid(),
@@ -138,11 +156,13 @@ const snapshotFieldsSchema = z.object({
     z.literal(4),
     z.literal(5),
     z.literal(6),
+    z.literal(7),
   ]),
   workspace: z.object({ name: z.string() }),
   members: z.array(member),
   projects: z.array(project),
   iterations: z.array(iteration).default([]),
+  retrospectives: z.array(retrospective).default([]),
   dependencies: z.array(dependency).default([]),
   documents: z.array(document),
   plans: z.array(plan),
@@ -152,6 +172,46 @@ export const snapshotSchema = snapshotFieldsSchema.superRefine((snapshot, contex
   const taskProjects = new Map<string, string>()
   for (const project of snapshot.projects)
     for (const task of project.tasks) taskProjects.set(task.sourceId, project.sourceId)
+
+  const iterations = new Map(snapshot.iterations.map((item) => [item.sourceId, item])),
+    retrospectiveIterations = new Set<string>()
+  for (const [index, item] of snapshot.retrospectives.entries()) {
+    const referenced = iterations.get(item.iterationSourceId),
+      path = ['retrospectives', index]
+    if (retrospectiveIterations.has(item.iterationSourceId))
+      context.addIssue({
+        code: 'custom',
+        path,
+        message: 'An iteration can have only one retrospective',
+      })
+    retrospectiveIterations.add(item.iterationSourceId)
+    if (
+      !referenced ||
+      referenced.projectSourceId !== item.projectSourceId ||
+      referenced.status !== 'CLOSED'
+    )
+      context.addIssue({
+        code: 'custom',
+        path,
+        message: 'Retrospectives must reference a closed iteration in the same project',
+      })
+    if (item.scopeTaskCount !== item.completedTaskCount + item.carryOverTaskCount)
+      context.addIssue({
+        code: 'custom',
+        path,
+        message: 'Retrospective scope must equal completed and carried-over tasks',
+      })
+    if (
+      item.overdueTaskCount > item.carryOverTaskCount ||
+      item.openBugCount > item.carryOverTaskCount ||
+      item.blockedTaskCount > item.carryOverTaskCount
+    )
+      context.addIssue({
+        code: 'custom',
+        path,
+        message: 'Retrospective risk counts cannot exceed carried-over tasks',
+      })
+  }
 
   const adjacency = new Map<string, string[]>(),
     inDegree = new Map<string, number>(),
