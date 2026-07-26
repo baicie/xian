@@ -3,6 +3,8 @@ import { createTaskTypeFields, type TaskTypeFields } from '@/models/taskFields'
 import type { ProjectWorkflow, TaskTransitionEvent, WorkflowTemplateKey } from '@/models/workflow'
 import type {
   Iteration,
+  IterationRetrospective,
+  IterationRetrospectiveUpdate,
   IterationTask,
   IterationTaskCandidatePage,
   ProjectHealth,
@@ -383,6 +385,22 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(input),
     })
+  },
+  iterationRetrospective(workspaceId: string, projectId: string, iterationId: string) {
+    return request<IterationRetrospective>(
+      `/workspaces/${workspaceId}/projects/${projectId}/iterations/${iterationId}/retrospective`,
+    )
+  },
+  updateIterationRetrospective(
+    workspaceId: string,
+    projectId: string,
+    iterationId: string,
+    input: IterationRetrospectiveUpdate,
+  ) {
+    return request<IterationRetrospective>(
+      `/workspaces/${workspaceId}/projects/${projectId}/iterations/${iterationId}/retrospective`,
+      { method: 'PATCH', body: JSON.stringify(input) },
+    )
   },
   iterationTasks(workspaceId: string, projectId: string, iterationId: string) {
     return request<IterationTask[]>(

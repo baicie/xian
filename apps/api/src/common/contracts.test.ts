@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   documentCreateSchema,
   documentUpdateSchema,
+  iterationRetrospectiveUpdateSchema,
   planCreateSchema,
   projectSchema,
   taskBulkSchema,
@@ -114,5 +115,40 @@ describe('project contracts', () => {
       projectSchema.parse({ name: '轻量', code: 'LITE', workflowTemplate: 'SIMPLE' })
         .workflowTemplate,
     ).toBe('SIMPLE')
+  })
+})
+
+describe('iteration retrospective contract', () => {
+  const validRetrospective = {
+    summary: ' Delivery summary ',
+    wentWell: ' Clear scope ',
+    improvements: ' Earlier validation ',
+    actionItems: ' Add a release checklist ',
+    version: 0,
+  }
+
+  it('normalizes editable prose and accepts the initial partial version', () => {
+    expect(iterationRetrospectiveUpdateSchema.parse(validRetrospective)).toEqual({
+      summary: 'Delivery summary',
+      wentWell: 'Clear scope',
+      improvements: 'Earlier validation',
+      actionItems: 'Add a release checklist',
+      version: 0,
+    })
+  })
+
+  it('rejects invalid versions, overlong prose, and unknown fields', () => {
+    expect(() =>
+      iterationRetrospectiveUpdateSchema.parse({ ...validRetrospective, version: -1 }),
+    ).toThrow()
+    expect(() =>
+      iterationRetrospectiveUpdateSchema.parse({
+        ...validRetrospective,
+        summary: 'x'.repeat(4001),
+      }),
+    ).toThrow()
+    expect(() =>
+      iterationRetrospectiveUpdateSchema.parse({ ...validRetrospective, unexpected: true }),
+    ).toThrow()
   })
 })

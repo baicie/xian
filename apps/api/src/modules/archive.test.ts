@@ -10,6 +10,7 @@ const snapshot: WorkspaceSnapshot = {
   members: [],
   projects: [],
   iterations: [],
+  retrospectives: [],
   dependencies: [],
   documents: [],
   plans: [],
@@ -220,6 +221,70 @@ describe('闲序 archive', () => {
       ],
     }
     expect(readArchive(createArchive(withIteration)).iterations).toEqual(withIteration.iterations)
+  })
+  it('round-trips captured retrospectives and rejects duplicate iteration records', () => {
+    const projectSourceId = '00000000-0000-4000-8000-000000000040',
+      iterationSourceId = '00000000-0000-4000-8000-000000000041',
+      withRetrospective: WorkspaceSnapshot = {
+        ...snapshot,
+        schemaVersion: 7,
+        projects: [
+          {
+            sourceId: projectSourceId,
+            name: '复盘项目',
+            code: 'RETR',
+            description: '',
+            color: '#2367d1',
+            archived: false,
+            workflowTemplate: 'SIMPLE',
+            columns: [],
+            transitions: [],
+            tasks: [],
+          },
+        ],
+        iterations: [
+          {
+            sourceId: iterationSourceId,
+            projectSourceId,
+            title: '已关闭迭代',
+            goal: '复盘交付',
+            startDate: '2026-07-01',
+            endDate: '2026-07-14',
+            status: 'CLOSED',
+            version: 2,
+            closedAt: '2026-07-14T08:30:00.000Z',
+          },
+        ],
+        retrospectives: [
+          {
+            iterationSourceId,
+            projectSourceId,
+            snapshotState: 'CAPTURED',
+            scopeTaskCount: 3,
+            completedTaskCount: 2,
+            carryOverTaskCount: 1,
+            overdueTaskCount: 1,
+            openBugCount: 1,
+            blockedTaskCount: 0,
+            summary: '按计划完成主要范围。',
+            wentWell: '范围清晰。',
+            improvements: '更早验证。',
+            actionItems: '跟进结转。',
+            version: 2,
+            createdAt: '2026-07-14T08:30:00.000Z',
+            updatedAt: '2026-07-14T09:00:00.000Z',
+          },
+        ],
+      }
+    expect(readArchive(createArchive(withRetrospective)).retrospectives).toEqual(
+      withRetrospective.retrospectives,
+    )
+    expect(() =>
+      createArchive({
+        ...withRetrospective,
+        retrospectives: [...withRetrospective.retrospectives, withRetrospective.retrospectives[0]!],
+      }),
+    ).toThrow('only one retrospective')
   })
   it('round-trips task dependency references', () => {
     const withDependency = dependencySnapshot([

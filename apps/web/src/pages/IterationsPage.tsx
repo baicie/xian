@@ -20,11 +20,13 @@ import { toast } from 'sonner'
 import { api } from '@/api'
 import type {
   Iteration,
+  IterationRetrospective,
   IterationTask,
   IterationTaskCandidate,
   ProjectHealth,
 } from '@/models/iteration'
 import ChoiceSelect from '@/components/ChoiceSelect'
+import IterationRetrospectivePanel from '@/components/iterations/IterationRetrospectivePanel'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,6 +54,7 @@ import { Input } from '@/components/ui/input'
 import { Progress, ProgressLabel } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Table,
   TableBody,
@@ -119,6 +122,8 @@ export default function IterationsPage({
     [closing, setClosing] = useState<Iteration | null>(null),
     [closeAction, setCloseAction] = useState<'BACKLOG' | 'CARRY_OVER'>('BACKLOG'),
     [carryTargetId, setCarryTargetId] = useState(''),
+    [retrospective, setRetrospective] = useState<IterationRetrospective | null>(null),
+    [retrospectiveLoading, setRetrospectiveLoading] = useState(false),
     [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(true)
 
@@ -165,6 +170,8 @@ export default function IterationsPage({
     void refresh()
   }, [refresh])
 
+  const selectedIteration = iterations.find((iteration) => iteration.id === selectedIterationId)
+
   useEffect(() => {
     if (!selectedProjectId || !selectedIterationId) {
       setTasks([])
@@ -176,10 +183,58 @@ export default function IterationsPage({
       .catch((reason) => toast.error(reason instanceof Error ? reason.message : '加载任务失败'))
   }, [workspaceId, selectedProjectId, selectedIterationId])
 
-  const selectedIteration = iterations.find((iteration) => iteration.id === selectedIterationId),
-    carryTargets = iterations.filter(
-      (iteration) => iteration.id !== closing?.id && iteration.status !== 'CLOSED',
-    )
+  const loadRetrospective = useCallback(
+    (iterationId: string) =>
+      api.iterationRetrospective(workspaceId, selectedProjectId, iterationId),
+    [selectedProjectId, workspaceId],
+  )
+
+  const refreshRetrospective = useCallback(
+    async (iterationId: string) => {
+      setRetrospectiveLoading(true)
+      try {
+        setRetrospective(await loadRetrospective(iterationId))
+      } catch (reason) {
+        toast.error(
+          reason instanceof Error ? reason.message : en ? 'Unable to load' : '加载复盘失败',
+        )
+      } finally {
+        setRetrospectiveLoading(false)
+      }
+    },
+    [en, loadRetrospective],
+  )
+
+  useEffect(() => {
+    if (!selectedIteration || selectedIteration.status !== 'CLOSED') {
+      setRetrospective(null)
+      setRetrospectiveLoading(false)
+      return
+    }
+    let active = true
+    setRetrospective(null)
+    setRetrospectiveLoading(true)
+    void loadRetrospective(selectedIteration.id)
+      .then((value) => {
+        if (active) setRetrospective(value)
+      })
+      .catch((reason) => {
+        if (active)
+          toast.error(
+            reason instanceof Error ? reason.message : en ? 'Unable to load' : '加载复盘失败',
+          )
+      })
+      .finally(() => {
+        if (active) setRetrospectiveLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [en, loadRetrospective, selectedIteration])
+
+  const carryTargets = iterations.filter(
+    (iteration) => iteration.id !== closing?.id && iteration.status !== 'CLOSED',
+  )
 
   const run = async (action: () => Promise<unknown>, success: string, preferredId?: string) => {
     setBusy(true)
@@ -381,30 +436,69 @@ export default function IterationsPage({
                   </span>
                 ) : null}
               </header>
-              <IterationTaskTable
-                tasks={tasks}
-                en={en}
-                canRemove={canManage && selectedIteration.status !== 'CLOSED'}
-                onRemove={(taskId) =>
-                  run(
-                    () =>
-                      api.moveIterationTasks(
-                        workspaceId,
-                        selectedProjectId,
-                        selectedIteration.id,
-                        [taskId],
-                        'REMOVE',
-                      ),
-                    en ? 'Task returned to backlog' : '任务已移回待规划',
-                    selectedIteration.id,
-                  ).then((succeeded) => {
-                    if (succeeded)
-                      void api
-                        .iterationTasks(workspaceId, selectedProjectId, selectedIteration.id)
-                        .then(setTasks)
-                  })
-                }
-              />
+              {selectedIteration.status === 'CLOSED' ? (
+                <Tabs defaultValue="scope" className="iteration-closed-tabs">
+                  <TabsList
+                    variant="line"
+                    aria-label={en ? 'Closed iteration views' : '已关闭迭代视图'}
+                  >
+                    <TabsTrigger value="scope">{en ? 'Scope' : '范围'}</TabsTrigger>
+                    <TabsTrigger value="retrospective">{en ? 'Retrospective' : '复盘'}</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="scope">
+                    <IterationTaskTable
+                      tasks={tasks}
+                      en={en}
+                      canRemove={false}
+                      onRemove={async () => {}}
+                    />
+                  </TabsContent>
+                  <TabsContent value="retrospective">
+                    <IterationRetrospectivePanel
+                      iteration={selectedIteration}
+                      retrospective={retrospective}
+                      loading={retrospectiveLoading}
+                      en={en}
+                      canManage={canManage}
+                      onSave={(input) =>
+                        api.updateIterationRetrospective(
+                          workspaceId,
+                          selectedProjectId,
+                          selectedIteration.id,
+                          input,
+                        )
+                      }
+                      onReload={() => void refreshRetrospective(selectedIteration.id)}
+                      onChange={setRetrospective}
+                    />
+                  </TabsContent>
+                </Tabs>
+              ) : (
+                <IterationTaskTable
+                  tasks={tasks}
+                  en={en}
+                  canRemove={canManage}
+                  onRemove={(taskId) =>
+                    run(
+                      () =>
+                        api.moveIterationTasks(
+                          workspaceId,
+                          selectedProjectId,
+                          selectedIteration.id,
+                          [taskId],
+                          'REMOVE',
+                        ),
+                      en ? 'Task returned to backlog' : '任务已移回待规划',
+                      selectedIteration.id,
+                    ).then((succeeded) => {
+                      if (succeeded)
+                        void api
+                          .iterationTasks(workspaceId, selectedProjectId, selectedIteration.id)
+                          .then(setTasks)
+                    })
+                  }
+                />
+              )}
             </>
           ) : (
             <Empty>

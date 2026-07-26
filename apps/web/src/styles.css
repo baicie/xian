@@ -4124,6 +4124,156 @@ h1 {
 .iteration-close-dialog [data-slot='field-group'] {
   gap: 12px;
 }
+.iteration-closed-tabs {
+  min-width: 0;
+  margin-top: 10px;
+  gap: 16px;
+}
+.iteration-closed-tabs > [data-slot='tabs-list'] {
+  border-bottom: 1px solid var(--line);
+}
+.iteration-closed-tabs [data-slot='tabs-content'] {
+  min-width: 0;
+}
+.iteration-retrospective,
+.iteration-retrospective-loading,
+.iteration-retrospective-form,
+.iteration-retrospective-readonly {
+  display: grid;
+  gap: 18px;
+}
+.iteration-retrospective {
+  min-width: 0;
+  padding-top: 4px;
+}
+.iteration-retrospective-header,
+.iteration-retrospective-header > div,
+.iteration-retrospective-actions,
+.iteration-retrospective-save {
+  display: flex;
+  align-items: center;
+}
+.iteration-retrospective-header {
+  justify-content: space-between;
+  gap: 16px;
+}
+.iteration-retrospective-heading,
+.iteration-retrospective-actions {
+  min-width: 0;
+  gap: 8px;
+}
+.iteration-retrospective-heading h3,
+.iteration-retrospective-snapshot h4,
+.iteration-retrospective-readonly h4 {
+  margin: 0;
+}
+.iteration-retrospective-heading h3 {
+  font-size: 15px;
+}
+.iteration-retrospective-actions {
+  flex: 0 0 auto;
+}
+.iteration-retrospective-partial {
+  min-width: 0;
+  padding: 10px 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border: 1px solid #e5bf81;
+  border-radius: 8px;
+  color: #795516;
+  background: #fff8e9;
+}
+.iteration-retrospective-partial svg {
+  width: 17px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+.iteration-retrospective-partial p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.5;
+}
+[data-theme='dark'] .iteration-retrospective-partial {
+  border-color: #785c2d;
+  color: #e5c47a;
+  background: #342a1a;
+}
+.iteration-retrospective-snapshot {
+  display: grid;
+  gap: 10px;
+}
+.iteration-retrospective-snapshot h4,
+.iteration-retrospective-readonly h4 {
+  font-size: 12px;
+}
+.iteration-retrospective-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--line);
+}
+.iteration-retrospective-metrics > div {
+  min-width: 0;
+  padding: 11px 12px;
+  display: grid;
+  gap: 3px;
+  background: var(--ui-muted);
+}
+.iteration-retrospective-metrics strong {
+  overflow-wrap: anywhere;
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+.iteration-retrospective-metrics small,
+.iteration-retrospective-save small {
+  color: var(--muted);
+  font-size: 10px;
+}
+.iteration-retrospective-form {
+  max-width: 860px;
+}
+.iteration-retrospective-form textarea {
+  min-height: 84px;
+  resize: vertical;
+}
+.iteration-retrospective-save {
+  justify-content: space-between;
+  gap: 12px;
+}
+.iteration-retrospective-readonly {
+  max-width: 860px;
+  gap: 0;
+  border-top: 1px solid var(--line);
+}
+.iteration-retrospective-readonly > section {
+  padding: 13px 0;
+  border-bottom: 1px solid var(--line);
+}
+.iteration-retrospective-readonly p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+.iteration-retrospective-loading {
+  padding-top: 6px;
+}
+.iteration-retrospective-skeleton-title {
+  width: 170px;
+  height: 20px;
+}
+.iteration-retrospective-skeleton-metrics {
+  height: 96px;
+}
+.iteration-retrospective-skeleton-notes {
+  height: 260px;
+}
 
 @media (max-width: 900px) {
   .iteration-health {
@@ -4135,6 +4285,9 @@ h1 {
   .iteration-workspace-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+  .iteration-retrospective-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -4231,5 +4384,36 @@ h1 {
     flex: 1 1 180px;
     overflow: visible;
     text-overflow: clip;
+  }
+  .iteration-closed-tabs > [data-slot='tabs-list'] {
+    width: 100%;
+  }
+  .iteration-closed-tabs [data-slot='tabs-trigger'] {
+    min-width: 0;
+    flex: 1;
+  }
+  .iteration-retrospective-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .iteration-retrospective-actions {
+    width: 100%;
+  }
+  .iteration-retrospective-actions > button:first-child {
+    flex: 0 0 auto;
+  }
+  .iteration-retrospective-actions > button:last-child {
+    min-width: 0;
+    flex: 1;
+  }
+  .iteration-retrospective-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .iteration-retrospective-save {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .iteration-retrospective-save > button {
+    width: 100%;
   }
 }

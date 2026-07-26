@@ -5,6 +5,7 @@ import request from 'supertest'
 import type { INestApplication } from '@nestjs/common'
 import { AppModule } from './app.module.js'
 import { ApiErrorFilter } from './common/error.filter.js'
+import { DatabaseService } from './database/database.service.js'
 
 const binary = (res: NodeJS.ReadableStream, done: (error: Error | null, body?: Buffer) => void) => {
   const chunks: Buffer[] = []
@@ -1154,6 +1155,54 @@ describe('authenticated project flow', () => {
       .expect(201)
     expect(closed.body).toMatchObject({ movedTasks: 1, targetIterationId: next.body.id })
 
+    const retrospectivePath = `${path}/${current.body.id}/retrospective`,
+      capturedRetrospective = await request(app.getHttpServer())
+        .get(retrospectivePath)
+        .set('Cookie', cookie)
+        .expect(200)
+    expect(capturedRetrospective.body).toMatchObject({
+      iterationId: current.body.id,
+      snapshotState: 'CAPTURED',
+      scopeTaskCount: 2,
+      completedTaskCount: 1,
+      carryOverTaskCount: 1,
+      overdueTaskCount: 1,
+      openBugCount: 1,
+      blockedTaskCount: 0,
+      completionRate: 50,
+      version: 1,
+    })
+    const updatedRetrospective = await request(app.getHttpServer())
+      .patch(retrospectivePath)
+      .set('Cookie', cookie)
+      .set('x-csrf-token', csrf)
+      .send({
+        summary: 'Closed with one carry-over.',
+        wentWell: 'The release scope stayed focused.',
+        improvements: 'Validate the remaining defect earlier.',
+        actionItems: 'Review the carry-over in the next planning session.',
+        version: capturedRetrospective.body.version,
+      })
+      .expect(200)
+    expect(updatedRetrospective.body).toMatchObject({
+      snapshotState: 'CAPTURED',
+      summary: 'Closed with one carry-over.',
+      version: 2,
+    })
+    const staleRetrospective = await request(app.getHttpServer())
+      .patch(retrospectivePath)
+      .set('Cookie', cookie)
+      .set('x-csrf-token', csrf)
+      .send({
+        summary: '',
+        wentWell: '',
+        improvements: '',
+        actionItems: '',
+        version: capturedRetrospective.body.version,
+      })
+      .expect(409)
+    expect(staleRetrospective.body.code).toBe('ITERATION_RETROSPECTIVE_VERSION_CONFLICT')
+
     const [closedTasks, carriedTasks] = await Promise.all([
       request(app.getHttpServer())
         .get(`${path}/${current.body.id}/tasks`)
@@ -1203,6 +1252,178 @@ describe('authenticated project flow', () => {
     })
     expect(candidatePage.body.data).toHaveLength(1)
     expect(candidatePage.body.data[0].title).toBe('候选任务三')
+  })
+  it('creates an explicitly partial retrospective for historical closed iterations', async () => {
+    const project = await request(app.getHttpServer())
+        .post(`/api/v1/workspaces/${workspaceId}/projects`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({ name: '历史复盘项目', code: 'HIST' })
+        .expect(201),
+      path = `/api/v1/workspaces/${workspaceId}/projects/${project.body.id}/iterations`,
+      iteration = await request(app.getHttpServer())
+        .post(path)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({
+          title: '历史关闭迭代',
+          goal: '',
+          startDate: '2026-07-01',
+          endDate: '2026-07-14',
+        })
+        .expect(201)
+
+    await request(app.getHttpServer())
+      .post(`${path}/${iteration.body.id}/start`)
+      .set('Cookie', cookie)
+      .set('x-csrf-token', csrf)
+      .expect(201)
+    await request(app.getHttpServer())
+      .post(`${path}/${iteration.body.id}/close`)
+      .set('Cookie', cookie)
+      .set('x-csrf-token', csrf)
+      .send({ unfinishedAction: 'BACKLOG' })
+      .expect(201)
+
+    const database = app.get(DatabaseService)
+    await database.client`DELETE FROM iteration_retrospectives WHERE iteration_id=${iteration.body.id}`
+
+    const retrospectivePath = `${path}/${iteration.body.id}/retrospective`,
+      partial = await request(app.getHttpServer())
+        .get(retrospectivePath)
+        .set('Cookie', cookie)
+        .expect(200)
+    expect(partial.body).toMatchObject({
+      snapshotState: 'PARTIAL',
+      scopeTaskCount: 0,
+      completedTaskCount: 0,
+      carryOverTaskCount: 0,
+      version: 0,
+    })
+
+    const created = await request(app.getHttpServer())
+      .patch(retrospectivePath)
+      .set('Cookie', cookie)
+      .set('x-csrf-token', csrf)
+      .send({
+        summary: 'Recovered historical notes.',
+        wentWell: '',
+        improvements: '',
+        actionItems: '',
+        version: 0,
+      })
+      .expect(200)
+    expect(created.body).toMatchObject({
+      snapshotState: 'PARTIAL',
+      summary: 'Recovered historical notes.',
+      version: 1,
+    })
+  })
+  it('exports and restores captured iteration retrospectives', async () => {
+    const workspace = await request(app.getHttpServer())
+        .post('/api/v1/workspaces')
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({ name: '复盘备份空间' })
+        .expect(201),
+      project = await request(app.getHttpServer())
+        .post(`/api/v1/workspaces/${workspace.body.id}/projects`)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({ name: '复盘备份项目', code: 'RETRO' })
+        .expect(201),
+      columns = await request(app.getHttpServer())
+        .get(`/api/v1/workspaces/${workspace.body.id}/projects/${project.body.id}/columns`)
+        .set('Cookie', cookie)
+        .expect(200),
+      path = `/api/v1/workspaces/${workspace.body.id}/projects/${project.body.id}/iterations`,
+      iteration = await request(app.getHttpServer())
+        .post(path)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({
+          title: '可恢复复盘',
+          goal: '验证交付报告的可恢复性',
+          startDate: '2026-07-20',
+          endDate: '2026-07-31',
+        })
+        .expect(201)
+    await request(app.getHttpServer())
+      .post(`/api/v1/workspaces/${workspace.body.id}/tasks`)
+      .set('Cookie', cookie)
+      .set('x-csrf-token', csrf)
+      .send({
+        projectId: project.body.id,
+        columnId: columns.body.at(-1).id,
+        iterationId: iteration.body.id,
+        title: '已交付的复盘任务',
+      })
+      .expect(201)
+    await request(app.getHttpServer())
+      .post(`${path}/${iteration.body.id}/start`)
+      .set('Cookie', cookie)
+      .set('x-csrf-token', csrf)
+      .expect(201)
+    await request(app.getHttpServer())
+      .post(`${path}/${iteration.body.id}/close`)
+      .set('Cookie', cookie)
+      .set('x-csrf-token', csrf)
+      .send({ unfinishedAction: 'BACKLOG' })
+      .expect(201)
+    const retrospectivePath = `${path}/${iteration.body.id}/retrospective`,
+      retrospective = await request(app.getHttpServer())
+        .patch(retrospectivePath)
+        .set('Cookie', cookie)
+        .set('x-csrf-token', csrf)
+        .send({
+          summary: 'Delivery completed.',
+          wentWell: 'The scope was small.',
+          improvements: 'Start validation earlier.',
+          actionItems: 'Share this report.',
+          version: 1,
+        })
+        .expect(200)
+
+    const exported = await request(app.getHttpServer())
+      .get(`/api/v1/workspaces/${workspace.body.id}/export`)
+      .set('Cookie', cookie)
+      .buffer(true)
+      .parse(binary)
+      .expect(200)
+    const restored = await request(app.getHttpServer())
+      .post('/api/v1/workspaces/import')
+      .set('Cookie', cookie)
+      .set('x-csrf-token', csrf)
+      .attach('file', exported.body, 'retrospective.taskharbor.zip')
+      .expect(201)
+    const restoredProject = await request(app.getHttpServer())
+      .get(`/api/v1/workspaces/${restored.body.id}/projects`)
+      .set('Cookie', cookie)
+      .expect(200)
+    const restoredIterations = await request(app.getHttpServer())
+      .get(
+        `/api/v1/workspaces/${restored.body.id}/projects/${restoredProject.body[0].id}/iterations`,
+      )
+      .set('Cookie', cookie)
+      .expect(200)
+    const restoredIteration = restoredIterations.body.find(
+      (item: { title: string }) => item.title === '可恢复复盘',
+    )
+    const restoredRetrospective = await request(app.getHttpServer())
+      .get(
+        `/api/v1/workspaces/${restored.body.id}/projects/${restoredProject.body[0].id}/iterations/${restoredIteration.id}/retrospective`,
+      )
+      .set('Cookie', cookie)
+      .expect(200)
+    expect(restoredRetrospective.body).toMatchObject({
+      snapshotState: 'CAPTURED',
+      scopeTaskCount: 1,
+      completedTaskCount: 1,
+      carryOverTaskCount: 0,
+      summary: retrospective.body.summary,
+      actionItems: retrospective.body.actionItems,
+      version: retrospective.body.version,
+    })
   })
   it('exports and restores iteration assignments and task dependencies', async () => {
     const workspace = await request(app.getHttpServer())

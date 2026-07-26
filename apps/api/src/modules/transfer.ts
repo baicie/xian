@@ -49,6 +49,7 @@ export class TransferService {
       columns,
       transitions,
       iterations,
+      retrospectives,
       tasks,
       dependencies,
       assignees,
@@ -72,6 +73,8 @@ export class TransferService {
       this.db
         .client`SELECT id AS "sourceId",project_id AS "projectSourceId",title,goal,start_date::text AS "startDate",end_date::text AS "endDate",status,version,closed_at AS "closedAt" FROM iterations WHERE workspace_id=${workspaceId} ORDER BY project_id,created_at`,
       this.db
+        .client`SELECT iteration_id AS "iterationSourceId",project_id AS "projectSourceId",snapshot_state AS "snapshotState",scope_task_count AS "scopeTaskCount",completed_task_count AS "completedTaskCount",carry_over_task_count AS "carryOverTaskCount",overdue_task_count AS "overdueTaskCount",open_bug_count AS "openBugCount",blocked_task_count AS "blockedTaskCount",summary,went_well AS "wentWell",improvements,action_items AS "actionItems",version,created_at AS "createdAt",updated_at AS "updatedAt" FROM iteration_retrospectives WHERE workspace_id=${workspaceId} ORDER BY created_at`,
+      this.db
         .client`SELECT id AS "sourceId",project_id AS "projectSourceId",column_id AS "columnSourceId",iteration_id AS "iterationSourceId",number,title,description,kind,type_fields AS "typeFields",priority,due_date AS "dueDate",position,version,archived_at IS NOT NULL AS archived FROM tasks WHERE workspace_id=${workspaceId} AND deleted_at IS NULL ORDER BY project_id,number`,
       this.db
         .client`SELECT blocker_task_id AS "blockerTaskSourceId",blocked_task_id AS "blockedTaskSourceId" FROM task_dependencies WHERE workspace_id=${workspaceId} AND blocker_task_id IN (SELECT id FROM tasks WHERE workspace_id=${workspaceId} AND deleted_at IS NULL) AND blocked_task_id IN (SELECT id FROM tasks WHERE workspace_id=${workspaceId} AND deleted_at IS NULL) ORDER BY created_at`,
@@ -94,6 +97,7 @@ export class TransferService {
       this.db
         .client`SELECT id AS "sourceId",original_name AS "originalName",content_type AS "contentType",size_bytes AS "sizeBytes",sha256,storage_key AS "storageKey" FROM assets WHERE workspace_id=${workspaceId} ORDER BY created_at`,
     ])) as [
+      ExportRow[],
       ExportRow[],
       ExportRow[],
       ExportRow[],
@@ -138,7 +142,7 @@ export class TransferService {
         })),
     }))
     return {
-      schemaVersion: 6,
+      schemaVersion: 7,
       workspace: { name: workspace!.name },
       members: members as WorkspaceSnapshot['members'],
       projects: projects.map((project) => ({
@@ -163,6 +167,11 @@ export class TransferService {
         ...iteration,
         closedAt: iteration.closedAt ? iso(iteration.closedAt) : null,
       })) as WorkspaceSnapshot['iterations'],
+      retrospectives: retrospectives.map((retrospective) => ({
+        ...retrospective,
+        createdAt: iso(retrospective.createdAt),
+        updatedAt: iso(retrospective.updatedAt),
+      })) as WorkspaceSnapshot['retrospectives'],
       dependencies: dependencies as WorkspaceSnapshot['dependencies'],
       documents: documents.map((document) => ({
         ...document,
@@ -201,6 +210,7 @@ export class TransferService {
         members: snapshot.members.length,
         projects: snapshot.projects.length,
         tasks: snapshot.projects.reduce((total, project) => total + project.tasks.length, 0),
+        retrospectives: snapshot.retrospectives.length,
         documents: snapshot.documents.length,
         plans: snapshot.plans.length,
         assets: snapshot.assets.length,
@@ -320,6 +330,10 @@ export class TransferService {
             >`INSERT INTO iterations(workspace_id,project_id,title,goal,start_date,end_date,status,version,created_by,closed_at) VALUES(${workspace!.id},${created!.id},${iteration.title},${iteration.goal},${iteration.startDate},${iteration.endDate},${iteration.status},${iteration.version},${userId},${iteration.closedAt}) RETURNING id`
             restoredIterationIds.set(iteration.sourceId, next!.id)
           }
+          for (const retrospective of snapshot.retrospectives.filter(
+            (item) => item.projectSourceId === project.sourceId,
+          ))
+            await sql`INSERT INTO iteration_retrospectives(iteration_id,workspace_id,project_id,snapshot_state,scope_task_count,completed_task_count,carry_over_task_count,overdue_task_count,open_bug_count,blocked_task_count,summary,went_well,improvements,action_items,version,created_by,updated_by,created_at,updated_at) VALUES(${restoredIterationId(retrospective.iterationSourceId)},${workspace!.id},${created!.id},${retrospective.snapshotState},${retrospective.scopeTaskCount},${retrospective.completedTaskCount},${retrospective.carryOverTaskCount},${retrospective.overdueTaskCount},${retrospective.openBugCount},${retrospective.blockedTaskCount},${retrospective.summary},${retrospective.wentWell},${retrospective.improvements},${retrospective.actionItems},${retrospective.version},${userId},${userId},${retrospective.createdAt},${retrospective.updatedAt})`
           for (const task of project.tasks) {
             const [next] = await sql<
               { id: string }[]

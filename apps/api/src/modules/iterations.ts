@@ -17,6 +17,7 @@ import { DatabaseService } from '../database/database.service.js'
 import {
   iterationCloseSchema,
   iterationCreateSchema,
+  iterationRetrospectiveUpdateSchema,
   iterationTaskCandidateQuerySchema,
   iterationTaskMoveSchema,
   iterationUpdateSchema,
@@ -34,6 +35,23 @@ export type HealthTask = {
 }
 
 export type ActiveIterationHealth = { id: string; title: string } | null
+
+export type RetrospectiveTask = {
+  kind: 'TASK' | 'STORY' | 'BUG'
+  dueDate: string | null
+  done: boolean
+  blocked: boolean
+}
+
+export type IterationRetrospectiveSnapshot = {
+  scopeTaskCount: number
+  completedTaskCount: number
+  carryOverTaskCount: number
+  overdueTaskCount: number
+  openBugCount: number
+  blockedTaskCount: number
+  completionRate: number
+}
 
 const localDate = () => {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -79,6 +97,25 @@ export function calculateProjectHealth(
   }
 }
 
+export function calculateIterationRetrospectiveSnapshot(
+  tasks: RetrospectiveTask[],
+  today: string,
+): IterationRetrospectiveSnapshot {
+  const scopeTaskCount = tasks.length,
+    completedTaskCount = tasks.filter((task) => task.done).length,
+    carryOverTaskCount = scopeTaskCount - completedTaskCount
+  return {
+    scopeTaskCount,
+    completedTaskCount,
+    carryOverTaskCount,
+    overdueTaskCount: tasks.filter((task) => !task.done && task.dueDate && task.dueDate < today)
+      .length,
+    openBugCount: tasks.filter((task) => task.kind === 'BUG' && !task.done).length,
+    blockedTaskCount: tasks.filter((task) => !task.done && task.blocked).length,
+    completionRate: scopeTaskCount ? Math.round((completedTaskCount / scopeTaskCount) * 100) : 0,
+  }
+}
+
 type IterationStatus = 'PLANNED' | 'ACTIVE' | 'CLOSED'
 type IterationRow = {
   id: string
@@ -94,6 +131,19 @@ type IterationRow = {
   updatedAt: string
   taskCount: number
   completedCount: number
+}
+
+type RetrospectiveRow = IterationRetrospectiveSnapshot & {
+  iterationId: string
+  snapshotState: 'CAPTURED' | 'PARTIAL'
+  summary: string
+  wentWell: string
+  improvements: string
+  actionItems: string
+  version: number
+  createdAt: string | null
+  updatedAt: string | null
+  updatedByName: string | null
 }
 
 @Injectable()
@@ -346,6 +396,86 @@ export class IterationService {
     }
   }
 
+  async retrospective(workspaceId: string, userId: string, projectId: string, iterationId: string) {
+    await this.workspaces.role(workspaceId, userId, 'iteration.read')
+    const [iteration] = await this.db.client<
+      { status: IterationStatus }[]
+    >`SELECT status FROM iterations WHERE id=${iterationId} AND workspace_id=${workspaceId} AND project_id=${projectId}`
+    if (!iteration)
+      throw new NotFoundException({ code: 'ITERATION_NOT_FOUND', message: '迭代不存在' })
+    if (iteration.status !== 'CLOSED')
+      throw new BadRequestException({
+        code: 'ITERATION_NOT_CLOSED',
+        message: '请在关闭迭代后发起复盘',
+      })
+    return (
+      (await this.retrospectiveRow(this.db.client, workspaceId, projectId, iterationId)) ??
+      this.partialRetrospective(this.db.client, workspaceId, iterationId)
+    )
+  }
+
+  async updateRetrospective(
+    workspaceId: string,
+    userId: string,
+    projectId: string,
+    iterationId: string,
+    input: ReturnType<typeof iterationRetrospectiveUpdateSchema.parse>,
+    requestId: string,
+  ) {
+    await this.workspaces.role(workspaceId, userId, 'iteration.manage')
+    return this.db.client.begin(async (sql) => {
+      await this.assertProject(sql, workspaceId, projectId, true)
+      const [iteration] = await sql<
+        { status: IterationStatus }[]
+      >`SELECT status FROM iterations WHERE id=${iterationId} AND workspace_id=${workspaceId} AND project_id=${projectId} FOR UPDATE`
+      if (!iteration)
+        throw new NotFoundException({ code: 'ITERATION_NOT_FOUND', message: '迭代不存在' })
+      if (iteration.status !== 'CLOSED')
+        throw new BadRequestException({
+          code: 'ITERATION_NOT_CLOSED',
+          message: '请在关闭迭代后发起复盘',
+        })
+
+      const current = await this.retrospectiveRow(sql, workspaceId, projectId, iterationId)
+      if (current) {
+        if (current.version !== input.version)
+          throw new ConflictException({
+            code: 'ITERATION_RETROSPECTIVE_VERSION_CONFLICT',
+            message: '复盘已被其他成员修改，请刷新后重试',
+            details: { currentVersion: current.version },
+          })
+        await sql`UPDATE iteration_retrospectives SET summary=${input.summary},went_well=${input.wentWell},improvements=${input.improvements},action_items=${input.actionItems},version=version+1,updated_by=${userId},updated_at=now() WHERE iteration_id=${iterationId}`
+      } else {
+        if (input.version !== 0)
+          throw new ConflictException({
+            code: 'ITERATION_RETROSPECTIVE_VERSION_CONFLICT',
+            message: '复盘已被其他成员创建，请刷新后重试',
+          })
+        const partial = await this.partialRetrospective(sql, workspaceId, iterationId)
+        try {
+          await sql`INSERT INTO iteration_retrospectives(iteration_id,workspace_id,project_id,snapshot_state,scope_task_count,completed_task_count,carry_over_task_count,overdue_task_count,open_bug_count,blocked_task_count,summary,went_well,improvements,action_items,created_by,updated_by) VALUES(${iterationId},${workspaceId},${projectId},${partial.snapshotState},${partial.scopeTaskCount},${partial.completedTaskCount},${partial.carryOverTaskCount},${partial.overdueTaskCount},${partial.openBugCount},${partial.blockedTaskCount},${input.summary},${input.wentWell},${input.improvements},${input.actionItems},${userId},${userId})`
+        } catch (error) {
+          if ((error as { code?: string }).code === '23505')
+            throw new ConflictException({
+              code: 'ITERATION_RETROSPECTIVE_VERSION_CONFLICT',
+              message: '复盘已被其他成员创建，请刷新后重试',
+            })
+          throw error
+        }
+      }
+      await this.audit(
+        sql,
+        workspaceId,
+        userId,
+        'iteration.retrospective_updated',
+        iterationId,
+        requestId,
+        input,
+      )
+      return this.retrospectiveRow(sql, workspaceId, projectId, iterationId)
+    })
+  }
+
   async close(
     workspaceId: string,
     userId: string,
@@ -384,16 +514,20 @@ export class IterationService {
           })
         targetIterationId = target.id
       }
-      const unfinished = await sql<
-        { id: string }[]
-      >`SELECT t.id FROM tasks t JOIN board_columns c ON c.id=t.column_id WHERE t.iteration_id=${iterationId} AND t.deleted_at IS NULL AND c.state_type<>'DONE' FOR UPDATE OF t`
+      const scopedTasks = await sql<
+          (RetrospectiveTask & { id: string })[]
+        >`SELECT t.id,t.kind,t.due_date::text AS "dueDate",c.state_type='DONE' AS done,EXISTS(SELECT 1 FROM task_dependencies dependency JOIN tasks blocker ON blocker.id=dependency.blocker_task_id JOIN board_columns blocker_column ON blocker_column.id=blocker.column_id WHERE dependency.blocked_task_id=t.id AND blocker.deleted_at IS NULL AND blocker.archived_at IS NULL AND blocker_column.state_type<>'DONE') AS blocked FROM tasks t JOIN board_columns c ON c.id=t.column_id WHERE t.iteration_id=${iterationId} AND t.workspace_id=${workspaceId} AND t.deleted_at IS NULL FOR UPDATE OF t`,
+        snapshot = calculateIterationRetrospectiveSnapshot(scopedTasks, localDate()),
+        unfinished = scopedTasks.filter((task) => !task.done)
       if (unfinished.length)
         await sql`UPDATE tasks SET iteration_id=${targetIterationId},version=version+1,updated_at=now() WHERE id IN ${sql(unfinished.map((task) => task.id))}`
       await sql`UPDATE iterations SET status='CLOSED',closed_at=now(),version=version+1,updated_at=now() WHERE id=${iterationId}`
+      await sql`INSERT INTO iteration_retrospectives(iteration_id,workspace_id,project_id,snapshot_state,scope_task_count,completed_task_count,carry_over_task_count,overdue_task_count,open_bug_count,blocked_task_count,created_by,updated_by) VALUES(${iterationId},${workspaceId},${projectId},'CAPTURED',${snapshot.scopeTaskCount},${snapshot.completedTaskCount},${snapshot.carryOverTaskCount},${snapshot.overdueTaskCount},${snapshot.openBugCount},${snapshot.blockedTaskCount},${userId},${userId})`
       await this.audit(sql, workspaceId, userId, 'iteration.closed', iterationId, requestId, {
         unfinishedAction: input.unfinishedAction,
         targetIterationId,
         movedTasks: unfinished.length,
+        snapshot,
       })
       return {
         iteration: await this.row(sql, workspaceId, projectId, iterationId),
@@ -427,6 +561,42 @@ export class IterationService {
       ? await sql`SELECT id FROM projects WHERE id=${projectId} AND workspace_id=${workspaceId} AND deleted_at IS NULL FOR UPDATE`
       : await sql`SELECT id FROM projects WHERE id=${projectId} AND workspace_id=${workspaceId} AND deleted_at IS NULL`
     if (!rows[0]) throw new NotFoundException({ code: 'PROJECT_NOT_FOUND', message: '项目不存在' })
+  }
+
+  private async partialRetrospective(
+    sql: Sql | TransactionSql,
+    workspaceId: string,
+    iterationId: string,
+  ): Promise<RetrospectiveRow> {
+    const tasks = await sql<
+        RetrospectiveTask[]
+      >`SELECT t.kind,t.due_date::text AS "dueDate",c.state_type='DONE' AS done,EXISTS(SELECT 1 FROM task_dependencies dependency JOIN tasks blocker ON blocker.id=dependency.blocker_task_id JOIN board_columns blocker_column ON blocker_column.id=blocker.column_id WHERE dependency.blocked_task_id=t.id AND blocker.deleted_at IS NULL AND blocker.archived_at IS NULL AND blocker_column.state_type<>'DONE') AS blocked FROM tasks t JOIN board_columns c ON c.id=t.column_id WHERE t.iteration_id=${iterationId} AND t.workspace_id=${workspaceId} AND t.deleted_at IS NULL`,
+      snapshot = calculateIterationRetrospectiveSnapshot(tasks, localDate())
+    return {
+      iterationId,
+      snapshotState: 'PARTIAL',
+      ...snapshot,
+      summary: '',
+      wentWell: '',
+      improvements: '',
+      actionItems: '',
+      version: 0,
+      createdAt: null,
+      updatedAt: null,
+      updatedByName: null,
+    }
+  }
+
+  private async retrospectiveRow(
+    sql: Sql | TransactionSql,
+    workspaceId: string,
+    projectId: string,
+    iterationId: string,
+  ): Promise<RetrospectiveRow | null> {
+    const [row] = await sql<
+      RetrospectiveRow[]
+    >`SELECT r.iteration_id AS "iterationId",r.snapshot_state AS "snapshotState",r.scope_task_count AS "scopeTaskCount",r.completed_task_count AS "completedTaskCount",r.carry_over_task_count AS "carryOverTaskCount",r.overdue_task_count AS "overdueTaskCount",r.open_bug_count AS "openBugCount",r.blocked_task_count AS "blockedTaskCount",CASE WHEN r.scope_task_count=0 THEN 0 ELSE round(r.completed_task_count::numeric*100/r.scope_task_count)::int END AS "completionRate",r.summary,r.went_well AS "wentWell",r.improvements,r.action_items AS "actionItems",r.version,r.created_at AS "createdAt",r.updated_at AS "updatedAt",u.name AS "updatedByName" FROM iteration_retrospectives r JOIN users u ON u.id=r.updated_by WHERE r.iteration_id=${iterationId} AND r.workspace_id=${workspaceId} AND r.project_id=${projectId}`
+    return row ?? null
   }
 
   private rows(sql: Sql | TransactionSql, workspaceId: string, projectId: string) {
@@ -536,6 +706,32 @@ export class IterationController {
       projectId,
       iterationId,
       parse(iterationCloseSchema, body),
+      req.requestId,
+    )
+  }
+
+  @Get('iterations/:iterationId/retrospective') retrospective(
+    @Req() req: AppRequest,
+    @Param('workspaceId') workspaceId: string,
+    @Param('projectId') projectId: string,
+    @Param('iterationId') iterationId: string,
+  ) {
+    return this.iterations.retrospective(workspaceId, req.user!.id, projectId, iterationId)
+  }
+
+  @Patch('iterations/:iterationId/retrospective') updateRetrospective(
+    @Req() req: AppRequest,
+    @Param('workspaceId') workspaceId: string,
+    @Param('projectId') projectId: string,
+    @Param('iterationId') iterationId: string,
+    @Body() body: unknown,
+  ) {
+    return this.iterations.updateRetrospective(
+      workspaceId,
+      req.user!.id,
+      projectId,
+      iterationId,
+      parse(iterationRetrospectiveUpdateSchema, body),
       req.requestId,
     )
   }
