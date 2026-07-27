@@ -14,7 +14,7 @@
     "@platejs/basic-nodes": "^53.0.0",
     "@platejs/markdown": "^53.2.2",
     "@radix-ui/react-toolbar": "^1.1.16",
-    "@radix-ui/react-tooltip": "^1.2.13",
+    "@radix-ui/react-tooltip": "^1.2.16",
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "latest",
     "class-variance-authority": "^0.7.1",
