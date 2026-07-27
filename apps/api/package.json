@@ -35,7 +35,7 @@
     "@types/cookie-parser": "latest",
     "@types/express": "latest",
     "@types/supertest": "latest",
-    "concurrently": "^10.0.3",
+    "concurrently": "^10.0.4",
     "supertest": "latest",
     "tsx": "latest",
     "typescript": "^6.0.3",
